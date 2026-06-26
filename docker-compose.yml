@@ -12,6 +12,7 @@ services:
       SMTP_PORT: ${SMTP_PORT:-465}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       REMINDER_TO: ${REMINDER_TO:-}
       REMINDER_DAYS: ${REMINDER_DAYS:-7}
     ports:

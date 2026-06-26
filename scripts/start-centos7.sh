@@ -34,6 +34,7 @@ fi
 if [ ! -f .env ]; then
   echo "首次启动：生成本地 .env。SMTP 授权码只保存在服务器本地，不会进 git。"
   smtp_user="${SMTP_USER:-892029465@qq.com}"
+  smtp_from="${SMTP_FROM:-不高兴 <${smtp_user}>}"
   reminder_to="${REMINDER_TO:-892029465@qq.com}"
   smtp_pass="${SMTP_PASS:-}"
   if [ -z "$smtp_pass" ]; then
@@ -46,6 +47,7 @@ SMTP_HOST=smtp.qq.com
 SMTP_PORT=465
 SMTP_USER=${smtp_user}
 SMTP_PASS=${smtp_pass}
+SMTP_FROM=${smtp_from}
 REMINDER_TO=${reminder_to}
 REMINDER_DAYS=7
 EOF
