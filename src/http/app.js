@@ -206,20 +206,40 @@ function normalizeMonth(value) {
 }
 
 function buildReminderMessage(reminders, to) {
-  const lines = reminders.flatMap((reminder) => [
-    `账号：${reminder.email}`,
-    `地区：${reminder.region}`,
-    `续费日期：${reminder.nextRenewalAt}（剩余 ${reminder.daysLeft} 天）`,
-    `成本：${reminder.cost}`,
-    `成员：${reminder.members.map((member) => `${member.name}${member.email ? ` <${member.email}>` : ""}`).join("、") || "无"}`,
-    "",
-  ]);
+  const firstRenewalAt = reminders[0]?.nextRenewalAt || "";
+  const subject =
+    reminders.length === 1
+      ? `Team Bus 账号续期确认 - ${firstRenewalAt}`
+      : `Team Bus 账号续期确认 - ${reminders.length} 个账号`;
+  const intro =
+    reminders.length === 1
+      ? `以下账号将在 ${firstRenewalAt} 进入下一个使用周期，请在到期日前完成确认。`
+      : `以下 ${reminders.length} 个账号即将进入下一个使用周期，请在到期日前完成确认。`;
+  const blocks = reminders.map(formatReminderBlock);
 
   return {
     to,
-    subject: `Team Bus 续费提醒：${reminders.length} 个账号即将续费`,
-    text: `以下账号即将续费：\n\n${lines.join("\n")}`,
+    subject,
+    text: ["你好，", "", intro, "", blocks.join("\n\n")].join("\n"),
   };
+}
+
+function formatReminderBlock(reminder) {
+  const joinedAt = reminder.members[0]?.joinedAt || "未填写";
+  return [
+    "账号周期信息",
+    `账号名称：${reminder.email}`,
+    `成员上车日期：${joinedAt}`,
+    `下次续期日期：${reminder.nextRenewalAt}`,
+    "周期规则：每月同日续期",
+    "当前状态：待确认",
+    "",
+    "需要确认的事项",
+    "1. 确认成员是否继续使用。",
+    "2. 如需下车，请在续期日前联系车主。",
+    "",
+    "发件人：不高兴",
+  ].join("\n");
 }
 
 function defaultPublicDir() {

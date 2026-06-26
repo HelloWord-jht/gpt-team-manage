@@ -190,8 +190,13 @@ describe("team bus API", () => {
         assert.equal(response.status, 200);
         assert.equal(payload.sent, 1);
         assert.equal(sent.length, 1);
-        assert.match(sent[0].subject, /续费提醒/);
+        assert.equal(sent[0].subject, "Team Bus 账号续期确认 - 2026-07-22");
         assert.match(sent[0].text, /2026-07-22/);
+        assert.match(sent[0].text, /账号名称：demo@example\.com/);
+        assert.match(sent[0].text, /成员上车日期：2026-06-22/);
+        assert.match(sent[0].text, /如需下车，请在续期日前联系车主。/);
+        assert.doesNotMatch(sent[0].text, /核对当月收款与成本/);
+        assert.doesNotMatch(sent[0].text, /这是一封由你的 Team Bus 管理台发送的账户周期通知/);
       },
       {
         mailer: {
