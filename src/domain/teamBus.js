@@ -32,10 +32,13 @@ export function normalizeLegacyRows(rows) {
     .map((row) => {
       const [email, openedAt, region, cost, member1, member1Price, member2, member2Price, profit] = row;
       const normalizedOpenedAt = excelSerialToISO(openedAt);
-      const { members, notes } = normalizeMemberPairs([
-        [member1, member1Price],
-        [member2, member2Price],
-      ]);
+      const { members, notes } = normalizeMemberPairs(
+        [
+          [member1, member1Price],
+          [member2, member2Price],
+        ],
+        normalizedOpenedAt
+      );
 
       return {
         id: makeAccountId(email, normalizedOpenedAt),
@@ -52,8 +55,11 @@ export function normalizeLegacyRows(rows) {
 }
 
 export function summarizeAccounts(accounts) {
-  const totalProfit = accounts.reduce((sum, account) => sum + toNumber(account.profit, 0), 0);
-  const usedSlots = accounts.reduce((sum, account) => sum + account.members.length, 0);
+  const totalProfit = accounts.reduce(
+    (sum, account) => sum + toNumber(account.computedProfitCny ?? account.profit, 0),
+    0
+  );
+  const usedSlots = accounts.reduce((sum, account) => sum + visibleMembers(account).length, 0);
   const statusCounts = new Map(STATUS_DEFINITIONS.map((status) => [status.key, 0]));
   const regionMap = new Map();
 
@@ -70,7 +76,7 @@ export function summarizeAccounts(accounts) {
     };
     current.count += 1;
     current.activeCount += account.status === "active" ? 1 : 0;
-    current.profit += toNumber(account.profit, 0);
+    current.profit += toNumber(account.computedProfitCny ?? account.profit, 0);
     regionMap.set(region, current);
   });
 
@@ -103,8 +109,10 @@ export function filterAccounts(accounts, filters = {}) {
   const query = String(filters.query ?? "").trim().toLowerCase();
   const status = String(filters.status ?? "all");
   const region = String(filters.region ?? "all");
+  const month = String(filters.month ?? "").trim();
 
   return accounts.filter((account) => {
+    if (month && !isAccountVisibleInMonth(account, month)) return false;
     if (status !== "all" && account.status !== status) return false;
     if (region !== "all" && account.region !== region) return false;
     if (!query) return true;
@@ -125,12 +133,14 @@ export function sanitizeAccount(payload, options = {}) {
     : [];
   const members = Array.isArray(payload?.members)
     ? payload.members
-        .slice(0, 2)
         .map((member) => ({
           name: String(member?.name ?? "").trim(),
+          email: String(member?.email ?? "").trim(),
           price: toNumber(member?.price, NaN),
+          joinedAt: String(member?.joinedAt ?? openedAt).trim(),
+          leftAt: String(member?.leftAt ?? "").trim(),
         }))
-        .filter((member) => member.name || Number.isFinite(member.price))
+        .filter((member) => member.name || member.email || Number.isFinite(member.price))
     : [];
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -155,7 +165,19 @@ export function sanitizeAccount(payload, options = {}) {
 
   members.forEach((member, index) => {
     if (!member.name) errors.push(`成员${index + 1}名称不能为空`);
+    if (member.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(member.email)) {
+      errors.push(`成员${index + 1}邮箱格式不正确`);
+    }
     if (!Number.isFinite(member.price)) errors.push(`成员${index + 1}价格必须是数字`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(member.joinedAt)) {
+      errors.push(`成员${index + 1}上车日期必须是 YYYY-MM-DD`);
+    }
+    if (member.leftAt && !/^\d{4}-\d{2}-\d{2}$/.test(member.leftAt)) {
+      errors.push(`成员${index + 1}下车日期必须是 YYYY-MM-DD`);
+    }
+    if (member.leftAt && member.leftAt < member.joinedAt) {
+      errors.push(`成员${index + 1}下车日期不能早于上车日期`);
+    }
   });
 
   const profit = toNumber(payload?.profit, NaN);
@@ -186,7 +208,98 @@ export function statusDefinitions() {
   return STATUS_DEFINITIONS.map((status) => ({ ...status }));
 }
 
-function normalizeMemberPairs(pairs) {
+export function parseCost(rawCost) {
+  const raw = typeof rawCost === "object" && rawCost !== null ? rawCost.raw : rawCost;
+  const text = String(raw ?? "").trim();
+  const normalized = text.replace(/,/g, "");
+  const amountMatch = normalized.match(/[\d.]+/);
+  const amount = amountMatch ? Number(amountMatch[0]) : NaN;
+  const upper = normalized.toUpperCase();
+  let currency = "";
+
+  if (/COP/.test(upper)) currency = "COP";
+  else if (/JPY/.test(upper)) currency = "JPY";
+  else if (/PHP/.test(upper)) currency = "PHP";
+  else if (/USD|USDT|U$/.test(upper)) currency = "USD";
+  else if (/EUR/.test(upper) || /欧/.test(normalized)) currency = "EUR";
+  else if (/CNY|RMB|人民币|元/.test(upper)) currency = "CNY";
+
+  return {
+    raw: text,
+    amount: Number.isFinite(amount) ? amount : 0,
+    currency,
+  };
+}
+
+export function projectAccountForMonth(account, month) {
+  const normalized = normalizeAccount(account);
+  const activeMembers = normalized.members.filter((member) => isMemberActiveInMonth(member, month));
+  const costDetail = parseCost(normalized.cost);
+  const rateToCny = normalized.exchangeRate?.rateToCny;
+  const costCny =
+    normalized.status === "active" && activeMembers.length > 0 && Number.isFinite(rateToCny)
+      ? roundMoney(costDetail.amount * rateToCny)
+      : null;
+  const revenueCny = roundMoney(activeMembers.reduce((sum, member) => sum + toNumber(member.price, 0), 0));
+  const computedProfitCny = costCny === null ? null : roundMoney(revenueCny - costCny);
+
+  return {
+    ...normalized,
+    activeMembers,
+    costDetail,
+    costCny,
+    revenueCny,
+    computedProfitCny,
+  };
+}
+
+export function buildRenewalReminders(accounts, options = {}) {
+  const today = options.today || new Date().toISOString().slice(0, 10);
+  const daysAhead = Number.isFinite(Number(options.daysAhead)) ? Number(options.daysAhead) : 3;
+
+  return accounts
+    .map(normalizeAccount)
+    .filter((account) => account.status === "active")
+    .map((account) => {
+      const nextRenewalAt = nextRenewalDate(account.openedAt, today);
+      const daysLeft = diffDays(today, nextRenewalAt);
+      const month = nextRenewalAt.slice(0, 7);
+      const activeMembers = account.members.filter((member) => isMemberActiveInMonth(member, month));
+
+      return {
+        id: account.id,
+        email: account.email,
+        region: account.region,
+        cost: account.cost,
+        nextRenewalAt,
+        daysLeft,
+        members: activeMembers,
+        memberEmails: activeMembers.map((member) => member.email).filter(Boolean),
+      };
+    })
+    .filter((reminder) => reminder.daysLeft >= 0 && reminder.daysLeft <= daysAhead)
+    .sort((a, b) => a.nextRenewalAt.localeCompare(b.nextRenewalAt));
+}
+
+export function normalizeAccount(account) {
+  const openedAt = excelSerialToISO(account.openedAt) || "";
+  return {
+    id: account.id || makeAccountId(account.email, openedAt),
+    email: String(account.email ?? "").trim(),
+    openedAt,
+    region: String(account.region ?? "").trim(),
+    cost: typeof account.cost === "object" && account.cost !== null ? account.cost.raw : String(account.cost ?? "").trim(),
+    members: Array.isArray(account.members)
+      ? account.members.map((member) => normalizeMember(member, openedAt))
+      : [],
+    profit: toNumber(account.profit, 0),
+    status: VALID_STATUSES.has(account.status) ? account.status : "active",
+    notes: Array.isArray(account.notes) ? account.notes.map((note) => String(note).trim()).filter(Boolean) : [],
+    exchangeRate: account.exchangeRate || null,
+  };
+}
+
+function normalizeMemberPairs(pairs, openedAt = "") {
   const members = [];
   const notes = [];
 
@@ -203,7 +316,7 @@ function normalizeMemberPairs(pairs) {
       return;
     }
 
-    members.push({ name, price });
+    members.push({ name, email: "", price, joinedAt: openedAt, leftAt: "" });
   });
 
   return { members, notes: unique(notes) };
@@ -228,12 +341,76 @@ function searchableText(account) {
     account.region,
     account.cost,
     account.status,
-    ...account.members.flatMap((member) => [member.name, member.price]),
+    ...visibleMembers(account).flatMap((member) => [member.name, member.email, member.price, member.joinedAt, member.leftAt]),
     ...account.notes,
     account.profit,
   ]
     .join(" ")
     .toLowerCase();
+}
+
+function normalizeMember(member, openedAt) {
+  return {
+    name: String(member?.name ?? "").trim(),
+    email: String(member?.email ?? "").trim(),
+    price: toNumber(member?.price, 0),
+    joinedAt: String(member?.joinedAt || openedAt).trim(),
+    leftAt: String(member?.leftAt ?? "").trim(),
+  };
+}
+
+function isAccountVisibleInMonth(account, month) {
+  if (!/^\d{4}-\d{2}$/.test(month)) return true;
+  const normalized = normalizeAccount(account);
+  if (!normalized.openedAt || normalized.openedAt > monthEnd(month)) return false;
+  if (normalized.members.some((member) => isMemberActiveInMonth(member, month))) return true;
+  return normalized.openedAt.startsWith(month);
+}
+
+function isMemberActiveInMonth(member, month) {
+  const start = monthStart(month);
+  const end = monthEnd(month);
+  const joinedAt = member.joinedAt || start;
+  const leftAt = member.leftAt || "9999-12-31";
+  return joinedAt <= end && leftAt >= start;
+}
+
+function visibleMembers(account) {
+  return Array.isArray(account.activeMembers) ? account.activeMembers : account.members || [];
+}
+
+function nextRenewalDate(openedAt, today) {
+  const openedDay = Number(openedAt.slice(8, 10));
+  const current = new Date(`${today}T00:00:00Z`);
+  let candidate = dateWithDay(current.getUTCFullYear(), current.getUTCMonth() + 1, openedDay);
+  if (candidate < today) {
+    const nextMonth = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth() + 1, 1));
+    candidate = dateWithDay(nextMonth.getUTCFullYear(), nextMonth.getUTCMonth() + 1, openedDay);
+  }
+  return candidate;
+}
+
+function dateWithDay(year, month, day) {
+  const maxDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(Math.min(day, maxDay)).padStart(2, "0")}`;
+}
+
+function diffDays(from, to) {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+}
+
+function monthStart(month) {
+  return `${month}-01`;
+}
+
+function monthEnd(month) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const maxDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return `${month}-${String(maxDay).padStart(2, "0")}`;
+}
+
+function roundMoney(value) {
+  return Math.round(value * 100) / 100;
 }
 
 function makeAccountId(email, openedAt) {

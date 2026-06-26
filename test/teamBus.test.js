@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  buildRenewalReminders,
   excelSerialToISO,
   filterAccounts,
+  parseCost,
+  projectAccountForMonth,
   normalizeLegacyRows,
   summarizeAccounts,
 } from "../src/domain/teamBus.js";
@@ -37,8 +40,8 @@ describe("team bus domain", () => {
       region: "美国",
       cost: "20U",
       members: [
-        { name: "王顺泽", price: 100 },
-        { name: "袁晶晶", price: 100 },
+        { name: "王顺泽", email: "", price: 100, joinedAt: "2026-06-01", leftAt: "" },
+        { name: "袁晶晶", email: "", price: 100, joinedAt: "2026-06-01", leftAt: "" },
       ],
       profit: 64,
       status: "active",
@@ -81,6 +84,100 @@ describe("team bus domain", () => {
     assert.equal(filterAccounts(accounts, { region: "哥伦比亚" }).length, 3);
     assert.equal(filterAccounts(accounts, { query: "橘皮" }).length, 1);
     assert.equal(filterAccounts(accounts, { query: "退订", status: "canceled" }).length, 1);
+  });
+
+  it("parses payment currency costs from legacy raw strings", () => {
+    assert.deepEqual(parseCost("20U"), { raw: "20U", amount: 20, currency: "USD" });
+    assert.deepEqual(parseCost("72800COP"), { raw: "72800COP", amount: 72800, currency: "COP" });
+    assert.deepEqual(parseCost("15.01欧"), { raw: "15.01欧", amount: 15.01, currency: "EUR" });
+    assert.deepEqual(parseCost("3850JPY"), { raw: "3850JPY", amount: 3850, currency: "JPY" });
+    assert.deepEqual(parseCost("1,201PHP"), { raw: "1,201PHP", amount: 1201, currency: "PHP" });
+  });
+
+  it("projects accounts by month with member lifecycle and real RMB cost", () => {
+    const account = {
+      id: "demo",
+      email: "owner@example.com",
+      openedAt: "2026-06-01",
+      region: "美国",
+      cost: "20U",
+      members: [
+        { name: "A", email: "a@example.com", price: 100, joinedAt: "2026-06-01", leftAt: "2026-06-30" },
+        { name: "B", email: "b@example.com", price: 110, joinedAt: "2026-07-01", leftAt: "" },
+      ],
+      profit: 64,
+      status: "active",
+      notes: [],
+      exchangeRate: { currency: "USD", date: "2026-06-01", rateToCny: 7.1, source: "test" },
+    };
+
+    const june = projectAccountForMonth(account, "2026-06");
+    const july = projectAccountForMonth(account, "2026-07");
+
+    assert.equal(june.activeMembers.length, 1);
+    assert.equal(june.activeMembers[0].email, "a@example.com");
+    assert.equal(june.costCny, 142);
+    assert.equal(june.revenueCny, 100);
+    assert.equal(june.computedProfitCny, -42);
+
+    assert.equal(july.activeMembers.length, 1);
+    assert.equal(july.activeMembers[0].email, "b@example.com");
+    assert.equal(july.revenueCny, 110);
+  });
+
+  it("filters account list by selected month", () => {
+    const accounts = [
+      {
+        id: "june",
+        email: "june@example.com",
+        openedAt: "2026-06-01",
+        region: "美国",
+        cost: "20U",
+        members: [{ name: "A", email: "a@example.com", price: 100, joinedAt: "2026-06-01", leftAt: "2026-06-30" }],
+        profit: 0,
+        status: "active",
+        notes: [],
+      },
+      {
+        id: "july",
+        email: "july@example.com",
+        openedAt: "2026-07-01",
+        region: "日本",
+        cost: "3850JPY",
+        members: [{ name: "B", email: "b@example.com", price: 120, joinedAt: "2026-07-01", leftAt: "" }],
+        profit: 0,
+        status: "active",
+        notes: [],
+      },
+    ];
+
+    assert.deepEqual(filterAccounts(accounts, { month: "2026-06" }).map((account) => account.id), ["june"]);
+    assert.deepEqual(filterAccounts(accounts, { month: "2026-07" }).map((account) => account.id), ["july"]);
+  });
+
+  it("builds renewal reminders from opened day and member emails", () => {
+    const reminders = buildRenewalReminders(
+      [
+        {
+          id: "demo",
+          email: "owner@example.com",
+          openedAt: "2026-06-22",
+          region: "菲律宾",
+          cost: "1,201PHP",
+          members: [
+            { name: "wc-GPT", email: "wc@example.com", price: 120, joinedAt: "2026-06-22", leftAt: "" },
+          ],
+          status: "active",
+          notes: [],
+        },
+      ],
+      { today: "2026-07-20", daysAhead: 3 }
+    );
+
+    assert.equal(reminders.length, 1);
+    assert.equal(reminders[0].nextRenewalAt, "2026-07-22");
+    assert.equal(reminders[0].daysLeft, 2);
+    assert.equal(reminders[0].memberEmails[0], "wc@example.com");
   });
 }
 );

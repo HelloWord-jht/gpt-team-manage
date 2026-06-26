@@ -3,7 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  buildRenewalReminders,
   filterAccounts,
+  projectAccountForMonth,
   sanitizeAccount,
   statusDefinitions,
   summarizeAccounts,
@@ -17,7 +19,7 @@ const CONTENT_TYPES = {
   ".svg": "image/svg+xml",
 };
 
-export function createApp({ store, publicDir = defaultPublicDir() }) {
+export function createApp({ store, publicDir = defaultPublicDir(), exchangeRates = null, mailer = null }) {
   return async function app(request, response) {
     try {
       const url = new URL(request.url, "http://localhost");
@@ -27,11 +29,15 @@ export function createApp({ store, publicDir = defaultPublicDir() }) {
       }
 
       if (url.pathname === "/api/accounts" && request.method === "GET") {
-        return await handleList(request, response, store, url);
+        return await handleList(request, response, store, url, exchangeRates);
       }
 
       if (url.pathname === "/api/accounts" && request.method === "POST") {
         return await handleCreate(request, response, store);
+      }
+
+      if (url.pathname === "/api/reminders/send" && request.method === "POST") {
+        return await handleSendReminders(request, response, store, mailer);
       }
 
       const accountMatch = url.pathname.match(/^\/api\/accounts\/([^/]+)$/);
@@ -60,9 +66,13 @@ export function createApp({ store, publicDir = defaultPublicDir() }) {
   };
 }
 
-async function handleList(_request, response, store, url) {
-  const accounts = await store.list();
-  const filtered = filterAccounts(accounts, {
+async function handleList(_request, response, store, url, exchangeRates) {
+  const month = normalizeMonth(url.searchParams.get("month"));
+  const accounts = await withRates(await store.list(), exchangeRates);
+  const monthlyAccounts = accounts
+    .filter((account) => filterAccounts([account], { month }).length > 0)
+    .map((account) => projectAccountForMonth(account, month));
+  const filtered = filterAccounts(monthlyAccounts, {
     query: url.searchParams.get("q"),
     status: url.searchParams.get("status") || "all",
     region: url.searchParams.get("region") || "all",
@@ -73,12 +83,33 @@ async function handleList(_request, response, store, url) {
 
   sendJson(response, 200, {
     accounts: filtered,
-    summary: summarizeAccounts(accounts),
+    summary: summarizeAccounts(monthlyAccounts),
+    month,
+    reminders: buildRenewalReminders(accounts, { today: `${month}-01`, daysAhead: 31 }),
     filters: {
       regions,
       statuses: statusDefinitions(),
     },
   });
+}
+
+async function handleSendReminders(request, response, store, mailer) {
+  if (!mailer?.isConfigured?.()) {
+    return sendJson(response, 400, { error: "SMTP 未配置，请在服务器 .env 中设置 SMTP_USER 和 SMTP_PASS" });
+  }
+
+  const payload = await readJson(request);
+  const today = String(payload.today || new Date().toISOString().slice(0, 10));
+  const daysAhead = Number(payload.daysAhead ?? process.env.REMINDER_DAYS ?? 3);
+  const reminders = buildRenewalReminders(await store.list(), { today, daysAhead });
+
+  if (reminders.length === 0) {
+    return sendJson(response, 200, { sent: 0, reminders: [] });
+  }
+
+  const message = buildReminderMessage(reminders, payload.to || process.env.REMINDER_TO || process.env.SMTP_USER);
+  await mailer.sendRenewalReminder(message);
+  sendJson(response, 200, { sent: reminders.length, reminders });
 }
 
 async function handleCreate(request, response, store) {
@@ -161,6 +192,34 @@ async function serveStatic(response, publicDir, requestPath) {
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(payload));
+}
+
+async function withRates(accounts, exchangeRates) {
+  if (!exchangeRates?.attachRates) return accounts;
+  return await exchangeRates.attachRates(accounts);
+}
+
+function normalizeMonth(value) {
+  const text = String(value || "").trim();
+  if (/^\d{4}-\d{2}$/.test(text)) return text;
+  return new Date().toISOString().slice(0, 7);
+}
+
+function buildReminderMessage(reminders, to) {
+  const lines = reminders.flatMap((reminder) => [
+    `账号：${reminder.email}`,
+    `地区：${reminder.region}`,
+    `续费日期：${reminder.nextRenewalAt}（剩余 ${reminder.daysLeft} 天）`,
+    `成本：${reminder.cost}`,
+    `成员：${reminder.members.map((member) => `${member.name}${member.email ? ` <${member.email}>` : ""}`).join("、") || "无"}`,
+    "",
+  ]);
+
+  return {
+    to,
+    subject: `Team Bus 续费提醒：${reminders.length} 个账号即将续费`,
+    text: `以下账号即将续费：\n\n${lines.join("\n")}`,
+  };
 }
 
 function defaultPublicDir() {

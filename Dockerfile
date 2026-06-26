@@ -8,6 +8,8 @@ ENV PORT=5176
 ENV DATA_PATH=/app/data/team-bus.json
 
 COPY package.json ./
+RUN npm install --omit=dev --no-audit --no-fund
+
 COPY src ./src
 COPY public ./public
 COPY data ./data

@@ -8,11 +8,17 @@
     "members": [
       {
         "name": "王顺泽",
-        "price": 100
+        "email": "",
+        "price": 100,
+        "joinedAt": "2026-06-01",
+        "leftAt": ""
       },
       {
         "name": "袁晶晶",
-        "price": 100
+        "email": "",
+        "price": 100,
+        "joinedAt": "2026-06-01",
+        "leftAt": ""
       }
     ],
     "profit": 64,
@@ -28,11 +34,17 @@
     "members": [
       {
         "name": "Lucky Fish-GPT",
-        "price": 100
+        "email": "",
+        "price": 100,
+        "joinedAt": "2026-06-02",
+        "leftAt": ""
       },
       {
         "name": "陈年橘皮-GPT",
-        "price": 100
+        "email": "",
+        "price": 100,
+        "joinedAt": "2026-06-02",
+        "leftAt": ""
       }
     ],
     "profit": 58,
@@ -48,11 +60,17 @@
     "members": [
       {
         "name": "万能元元-GPT",
-        "price": 100
+        "email": "",
+        "price": 100,
+        "joinedAt": "2026-06-03",
+        "leftAt": ""
       },
       {
         "name": "WE ll-GPT",
-        "price": 90
+        "email": "",
+        "price": 90,
+        "joinedAt": "2026-06-03",
+        "leftAt": ""
       }
     ],
     "profit": 48,
@@ -138,11 +156,17 @@
     "members": [
       {
         "name": "wc-GPT",
-        "price": 120
+        "email": "",
+        "price": 120,
+        "joinedAt": "2026-06-22",
+        "leftAt": ""
       },
       {
         "name": "Manchi-GPT",
-        "price": 100
+        "email": "",
+        "price": 100,
+        "joinedAt": "2026-06-22",
+        "leftAt": ""
       }
     ],
     "profit": 80,

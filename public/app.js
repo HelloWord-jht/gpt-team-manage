@@ -1,3 +1,5 @@
+const currentMonth = new Date().toISOString().slice(0, 7);
+
 const state = {
   accounts: [],
   summary: null,
@@ -5,6 +7,7 @@ const state = {
     query: "",
     status: "all",
     region: "all",
+    month: currentMonth,
   },
   options: {
     regions: [],
@@ -18,6 +21,7 @@ const els = {
   rows: document.querySelector("#accountRows"),
   empty: document.querySelector("#emptyState"),
   search: document.querySelector("#searchInput"),
+  month: document.querySelector("#monthFilter"),
   region: document.querySelector("#regionFilter"),
   tabs: document.querySelector("#statusTabs"),
   drawer: document.querySelector("#drawer"),
@@ -26,9 +30,12 @@ const els = {
   formError: document.querySelector("#formError"),
   toast: document.querySelector("#toast"),
   newAccount: document.querySelector("#newAccountButton"),
+  sendReminder: document.querySelector("#sendReminderButton"),
   refresh: document.querySelector("#refreshButton"),
   closeDrawer: document.querySelector("#closeDrawerButton"),
   cancel: document.querySelector("#cancelButton"),
+  addMember: document.querySelector("#addMemberButton"),
+  memberRows: document.querySelector("#memberRows"),
 };
 
 const inputs = {
@@ -38,10 +45,6 @@ const inputs = {
   status: document.querySelector("#statusInput"),
   region: document.querySelector("#regionInput"),
   cost: document.querySelector("#costInput"),
-  member1Name: document.querySelector("#member1NameInput"),
-  member1Price: document.querySelector("#member1PriceInput"),
-  member2Name: document.querySelector("#member2NameInput"),
-  member2Price: document.querySelector("#member2PriceInput"),
   profit: document.querySelector("#profitInput"),
   notes: document.querySelector("#notesInput"),
 };
@@ -55,6 +58,7 @@ const statusLabels = {
 
 installIcons();
 bindEvents();
+els.month.value = state.filters.month;
 loadAccounts();
 
 function bindEvents() {
@@ -63,15 +67,22 @@ function bindEvents() {
     renderRows();
   });
 
+  els.month.addEventListener("change", () => {
+    state.filters.month = els.month.value || currentMonth;
+    loadAccounts();
+  });
+
   els.region.addEventListener("change", () => {
     state.filters.region = els.region.value;
     renderRows();
   });
 
   els.newAccount.addEventListener("click", () => openDrawer());
+  els.sendReminder.addEventListener("click", sendReminders);
   els.refresh.addEventListener("click", () => loadAccounts({ toast: true }));
   els.closeDrawer.addEventListener("click", closeDrawer);
   els.cancel.addEventListener("click", closeDrawer);
+  els.addMember.addEventListener("click", () => addMemberRow());
   els.drawer.addEventListener("click", (event) => {
     if (event.target === els.drawer) closeDrawer();
   });
@@ -84,6 +95,7 @@ function bindEvents() {
 
 async function loadAccounts(options = {}) {
   const url = new URL("/api/accounts", window.location.origin);
+  url.searchParams.set("month", state.filters.month);
   const response = await fetch(url);
   const payload = await response.json();
 
@@ -95,6 +107,8 @@ async function loadAccounts(options = {}) {
   state.accounts = payload.accounts;
   state.summary = payload.summary;
   state.options = payload.filters;
+  state.filters.month = payload.month || state.filters.month;
+  els.month.value = state.filters.month;
   render();
   if (options.toast) showToast("已刷新");
 }
@@ -117,10 +131,10 @@ function renderMetrics() {
   };
   const occupancy = summary.totalSlots ? Math.round((summary.usedSlots / summary.totalSlots) * 100) : 0;
   const cards = [
-    ["账号总数", summary.totalAccounts, "Excel 导入记录"],
+    ["本月账号", summary.totalAccounts, `${state.filters.month} 月视图`],
     ["正常账号", summary.activeAccounts, "可继续运营"],
     ["异常账号", summary.issueAccounts, "封号/退订/退款"],
-    ["总利润", money(summary.totalProfit), `${summary.usedSlots}/${summary.totalSlots} 车位 · ${occupancy}%`],
+    ["真实利润", `¥${money(summary.totalProfit)}`, `${summary.usedSlots}/${summary.totalSlots} 车位 · ${occupancy}%`],
   ];
 
   els.metrics.innerHTML = cards
@@ -196,20 +210,32 @@ function renderRows() {
 }
 
 function rowHtml(account) {
-  const members = account.members.length
-    ? account.members
+  const activeMembers = account.activeMembers || account.members || [];
+  const members = activeMembers.length
+    ? activeMembers
         .map(
           (member) => `
-            <div class="member-line">
-              <strong>${escapeHtml(member.name)}</strong>
-              <span>${money(member.price)}</span>
+            <div class="member-line rich">
+              <div>
+                <strong>${escapeHtml(member.name)}</strong>
+                <span class="muted">${escapeHtml(member.email || "未填邮箱")}</span>
+              </div>
+              <div class="member-money">
+                <span>¥${money(member.price)}</span>
+                <span class="muted">${escapeHtml(member.joinedAt)}${member.leftAt ? ` - ${escapeHtml(member.leftAt)}` : ""}</span>
+              </div>
             </div>
           `
         )
         .join("")
-    : `<span class="muted">${escapeHtml(account.notes.join(" / ") || "暂无成员")}</span>`;
+    : `<span class="muted">${escapeHtml(account.notes.join(" / ") || "本月无成员")}</span>`;
 
-  const profitClass = account.profit < 0 ? "profit negative" : "profit";
+  const computedProfit = account.computedProfitCny ?? account.profit ?? 0;
+  const profitClass = computedProfit < 0 ? "profit negative" : "profit";
+  const costMeta =
+    account.costCny === null || account.costCny === undefined
+      ? "汇率待获取"
+      : `约 ¥${money(account.costCny)} · ${escapeHtml(account.exchangeRate?.source || "")}`;
 
   return `
     <tr>
@@ -223,9 +249,13 @@ function rowHtml(account) {
       <td>
         <strong>${escapeHtml(account.region)}</strong>
         <div class="muted">${escapeHtml(account.cost)}</div>
+        <div class="muted">${costMeta}</div>
       </td>
       <td><div class="member-list">${members}</div></td>
-      <td><span class="${profitClass}">${money(account.profit)}</span></td>
+      <td>
+        <span class="${profitClass}">¥${money(computedProfit)}</span>
+        <div class="muted">收入 ¥${money(account.revenueCny || 0)}</div>
+      </td>
       <td>${escapeHtml(account.openedAt)}</td>
       <td>
         <div class="row-actions">
@@ -253,7 +283,7 @@ function filteredAccounts() {
       account.region,
       account.cost,
       account.status,
-      ...account.members.flatMap((member) => [member.name, member.price]),
+      ...account.members.flatMap((member) => [member.name, member.email, member.price, member.joinedAt, member.leftAt]),
       ...account.notes,
       account.profit,
     ]
@@ -274,12 +304,12 @@ function openDrawer(account = null) {
   inputs.status.value = account?.status || "active";
   inputs.region.value = account?.region || "";
   inputs.cost.value = account?.cost || "";
-  inputs.member1Name.value = account?.members?.[0]?.name || "";
-  inputs.member1Price.value = account?.members?.[0]?.price ?? "";
-  inputs.member2Name.value = account?.members?.[1]?.name || "";
-  inputs.member2Price.value = account?.members?.[1]?.price ?? "";
   inputs.profit.value = account?.profit ?? 0;
   inputs.notes.value = account?.notes?.join("\n") || "";
+
+  els.memberRows.innerHTML = "";
+  const members = account?.members?.length ? account.members : [emptyMember(), emptyMember()];
+  members.forEach((member) => addMemberRow(member));
 
   els.drawer.classList.add("is-open");
   els.drawer.setAttribute("aria-hidden", "false");
@@ -290,6 +320,39 @@ function closeDrawer() {
   els.drawer.classList.remove("is-open");
   els.drawer.setAttribute("aria-hidden", "true");
   state.editing = null;
+}
+
+function addMemberRow(member = emptyMember()) {
+  const row = document.createElement("div");
+  row.className = "member-row";
+  row.innerHTML = `
+    <label>
+      <span>姓名</span>
+      <input data-member-field="name" type="text" value="${escapeAttr(member.name || "")}" />
+    </label>
+    <label>
+      <span>邮箱</span>
+      <input data-member-field="email" type="email" value="${escapeAttr(member.email || "")}" />
+    </label>
+    <label>
+      <span>月费</span>
+      <input data-member-field="price" type="number" step="0.01" value="${escapeAttr(member.price ?? "")}" />
+    </label>
+    <label>
+      <span>上车</span>
+      <input data-member-field="joinedAt" type="date" value="${escapeAttr(member.joinedAt || inputs.openedAt.value || "")}" />
+    </label>
+    <label>
+      <span>下车</span>
+      <input data-member-field="leftAt" type="date" value="${escapeAttr(member.leftAt || "")}" />
+    </label>
+    <button class="icon-button" type="button" title="移除成员">
+      <span aria-hidden="true" data-icon="trash"></span>
+    </button>
+  `;
+  row.querySelector("button").addEventListener("click", () => row.remove());
+  els.memberRows.append(row);
+  installIcons();
 }
 
 async function saveAccount() {
@@ -327,13 +390,38 @@ async function deleteAccount(id) {
   showToast("已删除");
 }
 
+async function sendReminders() {
+  const response = await fetch("/api/reminders/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ daysAhead: 7 }),
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    showToast(payload.error || "发送失败");
+    return;
+  }
+
+  showToast(payload.sent ? `已发送 ${payload.sent} 条续费提醒` : "未来 7 天没有续费账号");
+}
+
 function formToAccount() {
-  const members = [
-    [inputs.member1Name.value, inputs.member1Price.value],
-    [inputs.member2Name.value, inputs.member2Price.value],
-  ]
-    .filter(([name, price]) => name.trim() || price)
-    .map(([name, price]) => ({ name: name.trim(), price: Number(price) }));
+  const members = Array.from(els.memberRows.querySelectorAll(".member-row"))
+    .map((row) => {
+      const value = (field) => row.querySelector(`[data-member-field="${field}"]`)?.value?.trim() || "";
+      const priceText = value("price");
+      return {
+        name: value("name"),
+        email: value("email"),
+        priceText,
+        price: Number(priceText),
+        joinedAt: value("joinedAt") || inputs.openedAt.value,
+        leftAt: value("leftAt"),
+      };
+    })
+    .filter((member) => member.name || member.email || member.priceText)
+    .map(({ priceText, ...member }) => member);
 
   return {
     id: inputs.id.value,
@@ -351,13 +439,23 @@ function formToAccount() {
   };
 }
 
+function emptyMember() {
+  return {
+    name: "",
+    email: "",
+    price: "",
+    joinedAt: inputs.openedAt?.value || new Date().toISOString().slice(0, 10),
+    leftAt: "",
+  };
+}
+
 function showToast(message) {
   els.toast.textContent = message;
   els.toast.classList.add("is-visible");
   window.clearTimeout(showToast.timer);
   showToast.timer = window.setTimeout(() => {
     els.toast.classList.remove("is-visible");
-  }, 1800);
+  }, 2200);
 }
 
 function money(value) {

@@ -17,6 +17,10 @@
           <button class="icon-button ghost" id="refreshButton" type="button" title="刷新">
             <span aria-hidden="true" data-icon="refresh"></span>
           </button>
+          <button class="secondary-button" id="sendReminderButton" type="button">
+            <span aria-hidden="true" data-icon="mail"></span>
+            续费提醒
+          </button>
           <button class="primary-button" id="newAccountButton" type="button">
             <span aria-hidden="true" data-icon="plus"></span>
             新增账号
@@ -33,6 +37,7 @@
               <span aria-hidden="true" data-icon="search"></span>
               <input id="searchInput" type="search" placeholder="搜索账号、成员、备注" />
             </div>
+            <input id="monthFilter" class="month-filter" type="month" aria-label="月份筛选" />
             <select id="regionFilter" aria-label="地区筛选"></select>
           </div>
 
@@ -46,7 +51,7 @@
                   <th>状态</th>
                   <th>地区/成本</th>
                   <th>成员</th>
-                  <th>利润</th>
+                  <th>真实利润</th>
                   <th>开通日期</th>
                   <th class="action-col">操作</th>
                 </tr>
@@ -102,27 +107,14 @@
           </div>
 
           <div class="member-editor">
-            <div class="member-title">成员与价格</div>
-            <div class="form-grid">
-              <label>
-                <span>成员1</span>
-                <input id="member1NameInput" type="text" />
-              </label>
-              <label>
-                <span>价格1</span>
-                <input id="member1PriceInput" type="number" step="0.01" />
-              </label>
+            <div class="member-title-row">
+              <div class="member-title">成员与上下车</div>
+              <button class="secondary-button compact-button" id="addMemberButton" type="button">
+                <span aria-hidden="true" data-icon="plus"></span>
+                添加成员
+              </button>
             </div>
-            <div class="form-grid">
-              <label>
-                <span>成员2</span>
-                <input id="member2NameInput" type="text" />
-              </label>
-              <label>
-                <span>价格2</span>
-                <input id="member2PriceInput" type="number" step="0.01" />
-              </label>
-            </div>
+            <div class="member-rows" id="memberRows"></div>
           </div>
 
           <label>
@@ -158,6 +150,7 @@
       <svg data-name="trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 11v6M14 11v6" /></svg>
       <svg data-name="close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
       <svg data-name="save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM7 3v6h8M7 21v-8h10v8" /></svg>
+      <svg data-name="mail" viewBox="0 0 24 24"><path d="M4 6h16v12H4z" /><path d="m4 7 8 6 8-6" /></svg>
     </template>
 
     <script src="/app.js" type="module"></script>

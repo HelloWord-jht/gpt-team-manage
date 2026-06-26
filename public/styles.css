@@ -234,6 +234,11 @@ select {
   padding: 0 34px 0 12px;
 }
 
+.month-filter {
+  min-height: 42px;
+  padding: 0 12px;
+}
+
 .status-tabs {
   padding: 0 14px 14px;
   flex-wrap: wrap;
@@ -338,6 +343,20 @@ td {
   display: flex;
   justify-content: space-between;
   gap: 14px;
+}
+
+.member-line.rich {
+  align-items: flex-start;
+}
+
+.member-line.rich > div {
+  display: grid;
+  gap: 3px;
+}
+
+.member-money {
+  min-width: 96px;
+  text-align: right;
 }
 
 .profit {
@@ -445,6 +464,39 @@ textarea {
   font-weight: 900;
 }
 
+.member-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compact-button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.member-rows {
+  display: grid;
+  gap: 12px;
+}
+
+.member-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr 0.8fr 1fr 1fr 40px;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.member-row label {
+  min-width: 0;
+}
+
 .form-error {
   min-height: 20px;
   margin: 0;
@@ -517,8 +569,17 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .member-row {
+    grid-template-columns: 1fr;
+  }
+
+  .member-row .icon-button {
+    width: 100%;
+  }
+
   .topbar-actions {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .primary-button {

@@ -8,6 +8,12 @@ services:
       HOST: 0.0.0.0
       PORT: 5176
       DATA_PATH: /app/data/team-bus.json
+      SMTP_HOST: ${SMTP_HOST:-smtp.qq.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      REMINDER_TO: ${REMINDER_TO:-}
+      REMINDER_DAYS: ${REMINDER_DAYS:-7}
     ports:
       - "5176:5176"
     volumes:

@@ -18,8 +18,8 @@ function memoryStore(seed = []) {
   };
 }
 
-async function withServer(store, testFn) {
-  const server = createServer(createApp({ store, publicDir: null }));
+async function withServer(store, testFn, options = {}) {
+  const server = createServer(createApp({ store, publicDir: null, ...options }));
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address();
@@ -43,7 +43,7 @@ describe("team bus API", () => {
           openedAt: "2026-06-01",
           region: "美国",
           cost: "20U",
-          members: [{ name: "成员A", price: 100 }],
+          members: [{ name: "成员A", email: "a@example.com", price: 100, joinedAt: "2026-06-01", leftAt: "" }],
           profit: 64,
           status: "active",
           notes: [],
@@ -70,7 +70,7 @@ describe("team bus API", () => {
           openedAt: "2026-06-20",
           region: "日本",
           cost: "3850JPY",
-          members: [{ name: "Alpha-GPT", price: 120 }],
+          members: [{ name: "Alpha-GPT", email: "alpha@example.com", price: 120, joinedAt: "2026-06-20", leftAt: "" }],
           profit: 50,
           status: "active",
           notes: [],
@@ -80,6 +80,7 @@ describe("team bus API", () => {
 
       assert.equal(createResponse.status, 201);
       assert.equal(created.account.region, "日本");
+      assert.equal(created.account.members[0].email, "alpha@example.com");
 
       const updateResponse = await fetch(`${baseUrl}/api/accounts/${created.account.id}`, {
         method: "PUT",
@@ -118,5 +119,88 @@ describe("team bus API", () => {
       assert.match(payload.error, /账号邮箱/);
       assert.match(payload.error, /地区/);
     });
+  });
+
+  it("serves month-scoped account projections", async () => {
+    await withServer(
+      memoryStore([
+        {
+          id: "demo",
+          email: "demo@example.com",
+          openedAt: "2026-06-01",
+          region: "美国",
+          cost: "20U",
+          members: [
+            { name: "A", email: "a@example.com", price: 100, joinedAt: "2026-06-01", leftAt: "2026-06-30" },
+            { name: "B", email: "b@example.com", price: 120, joinedAt: "2026-07-01", leftAt: "" },
+          ],
+          profit: 64,
+          status: "active",
+          notes: [],
+        },
+      ]),
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/accounts?month=2026-07`);
+        const payload = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(payload.month, "2026-07");
+        assert.equal(payload.accounts.length, 1);
+        assert.equal(payload.accounts[0].activeMembers.length, 1);
+        assert.equal(payload.accounts[0].activeMembers[0].email, "b@example.com");
+      },
+      {
+        exchangeRates: {
+          async attachRates(accounts) {
+            return accounts.map((account) => ({
+              ...account,
+              exchangeRate: { currency: "USD", date: "2026-06-01", rateToCny: 7, source: "test" },
+            }));
+          },
+        },
+      }
+    );
+  });
+
+  it("sends renewal reminders through injected mailer", async () => {
+    const sent = [];
+
+    await withServer(
+      memoryStore([
+        {
+          id: "demo",
+          email: "demo@example.com",
+          openedAt: "2026-06-22",
+          region: "菲律宾",
+          cost: "1,201PHP",
+          members: [{ name: "wc-GPT", email: "wc@example.com", price: 120, joinedAt: "2026-06-22", leftAt: "" }],
+          profit: 80,
+          status: "active",
+          notes: [],
+        },
+      ]),
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/reminders/send`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ today: "2026-07-20", daysAhead: 3 }),
+        });
+        const payload = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(payload.sent, 1);
+        assert.equal(sent.length, 1);
+        assert.match(sent[0].subject, /续费提醒/);
+        assert.match(sent[0].text, /2026-07-22/);
+      },
+      {
+        mailer: {
+          isConfigured: () => true,
+          sendRenewalReminder: async (message) => {
+            sent.push(message);
+          },
+        },
+      }
+    );
   });
 });
