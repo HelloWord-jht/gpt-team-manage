@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   buildRenewalReminders,
+  compareAccountsForDisplay,
   excelSerialToISO,
   filterAccounts,
   parseCost,
@@ -177,7 +178,88 @@ describe("team bus domain", () => {
     assert.equal(reminders.length, 1);
     assert.equal(reminders[0].nextRenewalAt, "2026-07-22");
     assert.equal(reminders[0].daysLeft, 2);
+    assert.equal(reminders[0].cycleKey, "demo:2026-07-22");
     assert.equal(reminders[0].memberEmails[0], "wc@example.com");
+
+    const skipped = buildRenewalReminders(
+      [
+        {
+          id: "demo",
+          email: "owner@example.com",
+          openedAt: "2026-06-22",
+          region: "菲律宾",
+          cost: "1,201PHP",
+          members: [
+            { name: "wc-GPT", email: "wc@example.com", price: 120, joinedAt: "2026-06-22", leftAt: "" },
+          ],
+          status: "active",
+          notes: [],
+        },
+      ],
+      { today: "2026-07-20", daysAhead: 3, sentKeys: ["demo:2026-07-22"] }
+    );
+
+    assert.equal(skipped.length, 0);
+  });
+
+  it("projects next renewal countdown and sorts due accounts before normal active accounts", () => {
+    const dueSoon = projectAccountForMonth(
+      {
+        id: "due",
+        email: "due@example.com",
+        openedAt: "2026-06-01",
+        region: "美国",
+        cost: "20U",
+        members: [{ name: "A", email: "a@example.com", price: 100, joinedAt: "2026-06-01", leftAt: "" }],
+        profit: 0,
+        status: "active",
+        notes: [],
+      },
+      "2026-06",
+      { today: "2026-06-29" }
+    );
+    const normal = projectAccountForMonth(
+      {
+        id: "normal",
+        email: "normal@example.com",
+        openedAt: "2026-06-15",
+        region: "日本",
+        cost: "3850JPY",
+        members: [{ name: "B", email: "b@example.com", price: 120, joinedAt: "2026-06-15", leftAt: "" }],
+        profit: 0,
+        status: "active",
+        notes: [],
+      },
+      "2026-06",
+      { today: "2026-06-29" }
+    );
+    const canceled = projectAccountForMonth(
+      {
+        id: "canceled",
+        email: "canceled@example.com",
+        openedAt: "2026-06-01",
+        region: "法国",
+        cost: "15.01欧",
+        members: [],
+        profit: 0,
+        status: "canceled",
+        notes: [],
+      },
+      "2026-06",
+      { today: "2026-06-29" }
+    );
+
+    assert.deepEqual(dueSoon.renewal, {
+      nextRenewalAt: "2026-07-01",
+      daysLeft: 2,
+      isDueSoon: true,
+    });
+    assert.equal(normal.renewal.isDueSoon, false);
+    assert.deepEqual([canceled, normal, dueSoon].sort(compareAccountsForDisplay).map((account) => account.id), [
+      "due",
+      "normal",
+      "canceled",
+    ]);
   });
 }
 );

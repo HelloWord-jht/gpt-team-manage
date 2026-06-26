@@ -236,9 +236,11 @@ function rowHtml(account) {
     account.costCny === null || account.costCny === undefined
       ? "汇率待获取"
       : `约 ¥${money(account.costCny)} · ${escapeHtml(account.exchangeRate?.source || "")}`;
+  const renewal = renewalHtml(account.renewal);
+  const rowClass = account.renewal?.isDueSoon ? "is-due-soon" : "";
 
   return `
-    <tr>
+    <tr class="${rowClass}">
       <td>
         <div class="account-cell">
           <strong>${escapeHtml(account.email)}</strong>
@@ -256,6 +258,7 @@ function rowHtml(account) {
         <span class="${profitClass}">¥${money(computedProfit)}</span>
         <div class="muted">收入 ¥${money(account.revenueCny || 0)}</div>
       </td>
+      <td>${renewal}</td>
       <td>${escapeHtml(account.openedAt)}</td>
       <td>
         <div class="row-actions">
@@ -268,6 +271,19 @@ function rowHtml(account) {
         </div>
       </td>
     </tr>
+  `;
+}
+
+function renewalHtml(renewal) {
+  if (!renewal?.nextRenewalAt) return `<span class="muted">未计算</span>`;
+  const daysText = renewal.daysLeft === 0 ? "今天" : `${renewal.daysLeft} 天`;
+  const badgeClass = renewal.isDueSoon ? "renewal-badge due" : "renewal-badge";
+
+  return `
+    <div class="renewal-cell">
+      <strong>${escapeHtml(renewal.nextRenewalAt)}</strong>
+      <span class="${badgeClass}">${escapeHtml(daysText)}</span>
+    </div>
   `;
 }
 
@@ -394,7 +410,7 @@ async function sendReminders() {
   const response = await fetch("/api/reminders/send", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ daysAhead: 7 }),
+    body: JSON.stringify({ daysAhead: 3 }),
   });
   const payload = await response.json();
 
@@ -403,7 +419,7 @@ async function sendReminders() {
     return;
   }
 
-  showToast(payload.sent ? `已发送 ${payload.sent} 条续费提醒` : "未来 7 天没有续费账号");
+  showToast(payload.sent ? `已发送 ${payload.sent} 个账号续费提醒` : "未来 3 天没有新的待续费账号");
 }
 
 function formToAccount() {

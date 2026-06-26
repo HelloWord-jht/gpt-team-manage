@@ -9,7 +9,8 @@
 - 按月查询当月有效成员
 - 搜索、地区筛选、状态筛选
 - 按开通日期对应币种汇率换算人民币成本，并计算真实利润
-- QQ 邮箱 SMTP 续费提醒
+- QQ 邮箱 SMTP 给车主发送待续费汇总提醒
+- 每天自动扫描，默认提前 3 天提醒，每个车每个续费周期只提醒一次
 - 新增、编辑、删除账号
 - JSON 文件持久化，默认数据文件为 `data/team-bus.json`
 - Docker 一键启动，适合部署到 CentOS 7 服务器
@@ -75,6 +76,14 @@ data/exchange-rates.json
 
 这个文件会自动生成，不需要手动编辑。
 
+续费提醒发送历史在：
+
+```text
+data/reminder-history.json
+```
+
+这个文件用于避免同一个车同一个续费周期重复提醒，也会自动生成。
+
 ## QQ 邮箱 SMTP 配置
 
 首次运行 `scripts/start-centos7.sh` 会生成服务器本地 `.env` 文件，并提示输入 SMTP 授权码。`.env` 已加入 `.gitignore`，不会提交到 GitHub。
@@ -95,8 +104,8 @@ SMTP_PORT=465
 SMTP_USER=892029465@qq.com
 SMTP_PASS=你的QQ邮箱SMTP授权码
 SMTP_FROM=不高兴 <892029465@qq.com>
-REMINDER_TO=892029465@qq.com
-REMINDER_DAYS=7
+REMINDER_TO=jht19950420@gmail.com
+REMINDER_DAYS=3
 ```
 
 改完后重启：

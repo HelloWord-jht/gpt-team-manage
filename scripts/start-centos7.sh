@@ -35,7 +35,7 @@ if [ ! -f .env ]; then
   echo "首次启动：生成本地 .env。SMTP 授权码只保存在服务器本地，不会进 git。"
   smtp_user="${SMTP_USER:-892029465@qq.com}"
   smtp_from="${SMTP_FROM:-不高兴 <${smtp_user}>}"
-  reminder_to="${REMINDER_TO:-892029465@qq.com}"
+  reminder_to="${REMINDER_TO:-jht19950420@gmail.com}"
   smtp_pass="${SMTP_PASS:-}"
   if [ -z "$smtp_pass" ]; then
     read -r -s -p "请输入 QQ 邮箱 SMTP 授权码（可直接回车跳过，之后再编辑 .env）： " smtp_pass
@@ -49,7 +49,7 @@ SMTP_USER=${smtp_user}
 SMTP_PASS=${smtp_pass}
 SMTP_FROM=${smtp_from}
 REMINDER_TO=${reminder_to}
-REMINDER_DAYS=7
+REMINDER_DAYS=3
 EOF
   chmod 600 .env
 fi

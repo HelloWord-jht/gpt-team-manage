@@ -231,7 +231,7 @@ export function parseCost(rawCost) {
   };
 }
 
-export function projectAccountForMonth(account, month) {
+export function projectAccountForMonth(account, month, options = {}) {
   const normalized = normalizeAccount(account);
   const activeMembers = normalized.members.filter((member) => isMemberActiveInMonth(member, month));
   const costDetail = parseCost(normalized.cost);
@@ -250,21 +250,24 @@ export function projectAccountForMonth(account, month) {
     costCny,
     revenueCny,
     computedProfitCny,
+    renewal: buildRenewalInfo(normalized, options.today),
   };
 }
 
 export function buildRenewalReminders(accounts, options = {}) {
   const today = options.today || new Date().toISOString().slice(0, 10);
   const daysAhead = Number.isFinite(Number(options.daysAhead)) ? Number(options.daysAhead) : 3;
+  const sentKeys = new Set(options.sentKeys || []);
 
   return accounts
     .map(normalizeAccount)
     .filter((account) => account.status === "active")
     .map((account) => {
-      const nextRenewalAt = nextRenewalDate(account.openedAt, today);
-      const daysLeft = diffDays(today, nextRenewalAt);
+      const renewal = buildRenewalInfo(account, today);
+      const { nextRenewalAt, daysLeft } = renewal;
       const month = nextRenewalAt.slice(0, 7);
       const activeMembers = account.members.filter((member) => isMemberActiveInMonth(member, month));
+      const cycleKey = renewalCycleKey(account.id, nextRenewalAt);
 
       return {
         id: account.id,
@@ -273,12 +276,34 @@ export function buildRenewalReminders(accounts, options = {}) {
         cost: account.cost,
         nextRenewalAt,
         daysLeft,
+        cycleKey,
+        renewal,
         members: activeMembers,
         memberEmails: activeMembers.map((member) => member.email).filter(Boolean),
       };
     })
-    .filter((reminder) => reminder.daysLeft >= 0 && reminder.daysLeft <= daysAhead)
+    .filter(
+      (reminder) =>
+        reminder.members.length > 0 &&
+        reminder.daysLeft >= 0 &&
+        reminder.daysLeft <= daysAhead &&
+        !sentKeys.has(reminder.cycleKey)
+    )
     .sort((a, b) => a.nextRenewalAt.localeCompare(b.nextRenewalAt));
+}
+
+export function compareAccountsForDisplay(a, b) {
+  const rankA = accountDisplayRank(a);
+  const rankB = accountDisplayRank(b);
+  if (rankA !== rankB) return rankA - rankB;
+
+  if (rankA === 0) {
+    const daysA = toNumber(a.renewal?.daysLeft, Number.POSITIVE_INFINITY);
+    const daysB = toNumber(b.renewal?.daysLeft, Number.POSITIVE_INFINITY);
+    if (daysA !== daysB) return daysA - daysB;
+  }
+
+  return 0;
 }
 
 export function normalizeAccount(account) {
@@ -377,6 +402,26 @@ function isMemberActiveInMonth(member, month) {
 
 function visibleMembers(account) {
   return Array.isArray(account.activeMembers) ? account.activeMembers : account.members || [];
+}
+
+function buildRenewalInfo(account, today = new Date().toISOString().slice(0, 10)) {
+  const nextRenewalAt = nextRenewalDate(account.openedAt, today);
+  const daysLeft = diffDays(today, nextRenewalAt);
+  return {
+    nextRenewalAt,
+    daysLeft,
+    isDueSoon: account.status === "active" && daysLeft >= 0 && daysLeft <= 3,
+  };
+}
+
+function renewalCycleKey(accountId, nextRenewalAt) {
+  return `${accountId}:${nextRenewalAt}`;
+}
+
+function accountDisplayRank(account) {
+  if (account.status === "active" && account.renewal?.isDueSoon) return 0;
+  if (account.status === "active") return 1;
+  return 2;
 }
 
 function nextRenewalDate(openedAt, today) {

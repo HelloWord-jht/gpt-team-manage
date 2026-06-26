@@ -14,7 +14,7 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
       REMINDER_TO: ${REMINDER_TO:-}
-      REMINDER_DAYS: ${REMINDER_DAYS:-7}
+      REMINDER_DAYS: ${REMINDER_DAYS:-3}
     ports:
       - "5176:5176"
     volumes:

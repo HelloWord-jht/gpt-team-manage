@@ -164,6 +164,7 @@ describe("team bus API", () => {
 
   it("sends renewal reminders through injected mailer", async () => {
     const sent = [];
+    const reminderHistoryStore = memoryStore();
 
     await withServer(
       memoryStore([
@@ -183,22 +184,35 @@ describe("team bus API", () => {
         const response = await fetch(`${baseUrl}/api/reminders/send`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ today: "2026-07-20", daysAhead: 3 }),
+          body: JSON.stringify({ today: "2026-07-20", daysAhead: 3, to: "jht19950420@gmail.com" }),
         });
         const payload = await response.json();
 
         assert.equal(response.status, 200);
         assert.equal(payload.sent, 1);
         assert.equal(sent.length, 1);
-        assert.equal(sent[0].subject, "Team Bus 账号续期确认 - 2026-07-22");
+        assert.equal(sent[0].to, "jht19950420@gmail.com");
+        assert.equal(sent[0].subject, "Team Bus 待续费清单 - 2026-07-22");
         assert.match(sent[0].text, /2026-07-22/);
-        assert.match(sent[0].text, /账号名称：demo@example\.com/);
-        assert.match(sent[0].text, /成员上车日期：2026-06-22/);
-        assert.match(sent[0].text, /如需下车，请在续期日前联系车主。/);
-        assert.doesNotMatch(sent[0].text, /核对当月收款与成本/);
-        assert.doesNotMatch(sent[0].text, /这是一封由你的 Team Bus 管理台发送的账户周期通知/);
+        assert.match(sent[0].text, /待续费人员/);
+        assert.match(sent[0].text, /wc-GPT/);
+        assert.match(sent[0].text, /wc@example\.com/);
+        assert.match(sent[0].text, /¥120/);
+
+        const secondResponse = await fetch(`${baseUrl}/api/reminders/send`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ today: "2026-07-20", daysAhead: 3, to: "jht19950420@gmail.com" }),
+        });
+        const secondPayload = await secondResponse.json();
+
+        assert.equal(secondResponse.status, 200);
+        assert.equal(secondPayload.sent, 0);
+        assert.equal(secondPayload.skipped, 1);
+        assert.equal(sent.length, 1);
       },
       {
+        reminderHistoryStore,
         mailer: {
           isConfigured: () => true,
           sendRenewalReminder: async (message) => {

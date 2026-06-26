@@ -267,7 +267,7 @@ select {
 
 table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1080px;
   border-collapse: collapse;
 }
 
@@ -362,6 +362,38 @@ td {
 .profit {
   color: var(--green);
   font-weight: 900;
+}
+
+.renewal-cell {
+  display: grid;
+  gap: 8px;
+  min-width: 108px;
+}
+
+.renewal-badge {
+  width: fit-content;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  color: var(--blue);
+  background: var(--blue-soft);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.renewal-badge.due {
+  color: #ffffff;
+  background: var(--red);
+}
+
+tr.is-due-soon td {
+  background: #fff7ed;
+}
+
+tr.is-due-soon td:first-child {
+  border-left: 4px solid var(--red);
 }
 
 .negative {

@@ -4,6 +4,7 @@ node_modules
 npm-debug.log
 .env
 data/exchange-rates.json
+data/reminder-history.json
 work
 outputs
 test

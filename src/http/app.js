@@ -4,12 +4,14 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildRenewalReminders,
+  compareAccountsForDisplay,
   filterAccounts,
   projectAccountForMonth,
   sanitizeAccount,
   statusDefinitions,
   summarizeAccounts,
 } from "../domain/teamBus.js";
+import { sendOwnerRenewalDigest } from "../services/renewalReminders.js";
 
 const CONTENT_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -19,7 +21,13 @@ const CONTENT_TYPES = {
   ".svg": "image/svg+xml",
 };
 
-export function createApp({ store, publicDir = defaultPublicDir(), exchangeRates = null, mailer = null }) {
+export function createApp({
+  store,
+  publicDir = defaultPublicDir(),
+  exchangeRates = null,
+  mailer = null,
+  reminderHistoryStore = null,
+}) {
   return async function app(request, response) {
     try {
       const url = new URL(request.url, "http://localhost");
@@ -37,7 +45,7 @@ export function createApp({ store, publicDir = defaultPublicDir(), exchangeRates
       }
 
       if (url.pathname === "/api/reminders/send" && request.method === "POST") {
-        return await handleSendReminders(request, response, store, mailer);
+        return await handleSendReminders(request, response, store, mailer, reminderHistoryStore);
       }
 
       const accountMatch = url.pathname.match(/^\/api\/accounts\/([^/]+)$/);
@@ -68,15 +76,16 @@ export function createApp({ store, publicDir = defaultPublicDir(), exchangeRates
 
 async function handleList(_request, response, store, url, exchangeRates) {
   const month = normalizeMonth(url.searchParams.get("month"));
+  const today = normalizeDate(url.searchParams.get("today"));
   const accounts = await withRates(await store.list(), exchangeRates);
   const monthlyAccounts = accounts
     .filter((account) => filterAccounts([account], { month }).length > 0)
-    .map((account) => projectAccountForMonth(account, month));
+    .map((account) => projectAccountForMonth(account, month, { today }));
   const filtered = filterAccounts(monthlyAccounts, {
     query: url.searchParams.get("q"),
     status: url.searchParams.get("status") || "all",
     region: url.searchParams.get("region") || "all",
-  });
+  }).sort(compareAccountsForDisplay);
   const regions = Array.from(new Set(accounts.map((account) => account.region).filter(Boolean))).sort(
     (a, b) => a.localeCompare(b, "zh-Hans-CN")
   );
@@ -93,23 +102,25 @@ async function handleList(_request, response, store, url, exchangeRates) {
   });
 }
 
-async function handleSendReminders(request, response, store, mailer) {
+async function handleSendReminders(request, response, store, mailer, reminderHistoryStore) {
   if (!mailer?.isConfigured?.()) {
     return sendJson(response, 400, { error: "SMTP 未配置，请在服务器 .env 中设置 SMTP_USER 和 SMTP_PASS" });
   }
 
   const payload = await readJson(request);
-  const today = String(payload.today || new Date().toISOString().slice(0, 10));
+  const today = String(payload.today || todayInChina());
   const daysAhead = Number(payload.daysAhead ?? process.env.REMINDER_DAYS ?? 3);
-  const reminders = buildRenewalReminders(await store.list(), { today, daysAhead });
+  const accounts = await store.list();
+  const result = await sendOwnerRenewalDigest({
+    accounts,
+    reminderHistoryStore,
+    mailer,
+    today,
+    daysAhead,
+    to: payload.to || process.env.REMINDER_TO || "jht19950420@gmail.com",
+  });
 
-  if (reminders.length === 0) {
-    return sendJson(response, 200, { sent: 0, reminders: [] });
-  }
-
-  const message = buildReminderMessage(reminders, payload.to || process.env.REMINDER_TO || process.env.SMTP_USER);
-  await mailer.sendRenewalReminder(message);
-  sendJson(response, 200, { sent: reminders.length, reminders });
+  sendJson(response, 200, result);
 }
 
 async function handleCreate(request, response, store) {
@@ -205,41 +216,19 @@ function normalizeMonth(value) {
   return new Date().toISOString().slice(0, 7);
 }
 
-function buildReminderMessage(reminders, to) {
-  const firstRenewalAt = reminders[0]?.nextRenewalAt || "";
-  const subject =
-    reminders.length === 1
-      ? `Team Bus 账号续期确认 - ${firstRenewalAt}`
-      : `Team Bus 账号续期确认 - ${reminders.length} 个账号`;
-  const intro =
-    reminders.length === 1
-      ? `以下账号将在 ${firstRenewalAt} 进入下一个使用周期，请在到期日前完成确认。`
-      : `以下 ${reminders.length} 个账号即将进入下一个使用周期，请在到期日前完成确认。`;
-  const blocks = reminders.map(formatReminderBlock);
-
-  return {
-    to,
-    subject,
-    text: ["你好，", "", intro, "", blocks.join("\n\n")].join("\n"),
-  };
+function normalizeDate(value) {
+  const text = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  return todayInChina();
 }
 
-function formatReminderBlock(reminder) {
-  const joinedAt = reminder.members[0]?.joinedAt || "未填写";
-  return [
-    "账号周期信息",
-    `账号名称：${reminder.email}`,
-    `成员上车日期：${joinedAt}`,
-    `下次续期日期：${reminder.nextRenewalAt}`,
-    "周期规则：每月同日续期",
-    "当前状态：待确认",
-    "",
-    "需要确认的事项",
-    "1. 确认成员是否继续使用。",
-    "2. 如需下车，请在续期日前联系车主。",
-    "",
-    "发件人：不高兴",
-  ].join("\n");
+function todayInChina() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 function defaultPublicDir() {
