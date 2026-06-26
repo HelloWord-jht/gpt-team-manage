@@ -1,0 +1,14 @@
+services:
+  team-bus-manager:
+    build: .
+    image: gpt-team-manage:latest
+    container_name: gpt-team-manage
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 5176
+      DATA_PATH: /app/data/team-bus.json
+    ports:
+      - "5176:5176"
+    volumes:
+      - ./data:/app/data

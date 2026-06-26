@@ -1,0 +1,152 @@
+[
+  {
+    "id": "df132df-163-com-2026-06-01",
+    "email": "df132df@163.com",
+    "openedAt": "2026-06-01",
+    "region": "美国",
+    "cost": "20U",
+    "members": [
+      {
+        "name": "王顺泽",
+        "price": 100
+      },
+      {
+        "name": "袁晶晶",
+        "price": 100
+      }
+    ],
+    "profit": 64,
+    "status": "active",
+    "notes": []
+  },
+  {
+    "id": "dds78jkf-163-com-2026-06-02",
+    "email": "dds78jkf@163.com",
+    "openedAt": "2026-06-02",
+    "region": "哥伦比亚",
+    "cost": "72800COP",
+    "members": [
+      {
+        "name": "Lucky Fish-GPT",
+        "price": 100
+      },
+      {
+        "name": "陈年橘皮-GPT",
+        "price": 100
+      }
+    ],
+    "profit": 58,
+    "status": "active",
+    "notes": []
+  },
+  {
+    "id": "kjf89sdb-163-com-2026-06-03",
+    "email": "kjf89sdb@163.com",
+    "openedAt": "2026-06-03",
+    "region": "哥伦比亚",
+    "cost": "72800COP",
+    "members": [
+      {
+        "name": "万能元元-GPT",
+        "price": 100
+      },
+      {
+        "name": "WE ll-GPT",
+        "price": 90
+      }
+    ],
+    "profit": 48,
+    "status": "active",
+    "notes": []
+  },
+  {
+    "id": "jht19950420-gpt-gmail-com-2026-06-18",
+    "email": "jht19950420+gpt@gmail.com",
+    "openedAt": "2026-06-18",
+    "region": "法国",
+    "cost": "15.01欧",
+    "members": [],
+    "profit": 0,
+    "status": "blocked",
+    "notes": [
+      "已封号",
+      "已退款"
+    ]
+  },
+  {
+    "id": "jht19950420-ai-gmail-com-2026-06-19",
+    "email": "jht19950420+ai@gmail.com",
+    "openedAt": "2026-06-19",
+    "region": "法国",
+    "cost": "15.01欧",
+    "members": [],
+    "profit": 0,
+    "status": "blocked",
+    "notes": [
+      "已封号",
+      "已退款"
+    ]
+  },
+  {
+    "id": "jht19950420-edu-gmail-com-2026-06-19",
+    "email": "jht19950420+edu@gmail.com",
+    "openedAt": "2026-06-19",
+    "region": "法国",
+    "cost": "15.01欧",
+    "members": [],
+    "profit": 0,
+    "status": "blocked",
+    "notes": [
+      "已封号",
+      "已退款"
+    ]
+  },
+  {
+    "id": "benjazo2291-gmail-com-2026-06-03",
+    "email": "benjazo2291@gmail.com",
+    "openedAt": "2026-06-03",
+    "region": "哥伦比亚",
+    "cost": "72800COP",
+    "members": [],
+    "profit": 0,
+    "status": "canceled",
+    "notes": [
+      "谷歌邮箱被封急需退订",
+      "已退订已退款"
+    ]
+  },
+  {
+    "id": "hdl19951216-gmail-com-2026-06-10",
+    "email": "hdl19951216@gmail.com",
+    "openedAt": "2026-06-10",
+    "region": "日本",
+    "cost": "3850JPY",
+    "members": [],
+    "profit": 0,
+    "status": "canceled",
+    "notes": [
+      "已主动退订",
+      "已退款"
+    ]
+  },
+  {
+    "id": "jht19950420-flb-gmail-com-2026-06-22",
+    "email": "jht19950420+flb@gmail.com",
+    "openedAt": "2026-06-22",
+    "region": "菲律宾",
+    "cost": "1,201PHP",
+    "members": [
+      {
+        "name": "wc-GPT",
+        "price": 120
+      },
+      {
+        "name": "Manchi-GPT",
+        "price": 100
+      }
+    ],
+    "profit": 80,
+    "status": "active",
+    "notes": []
+  }
+]

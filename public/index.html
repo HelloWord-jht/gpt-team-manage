@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Team Bus 管理台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Team Bus</p>
+          <h1>账号车位管理</h1>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-button ghost" id="refreshButton" type="button" title="刷新">
+            <span aria-hidden="true" data-icon="refresh"></span>
+          </button>
+          <button class="primary-button" id="newAccountButton" type="button">
+            <span aria-hidden="true" data-icon="plus"></span>
+            新增账号
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="metrics" id="metrics"></section>
+
+        <section class="workspace">
+          <div class="toolbar">
+            <div class="search-box">
+              <span aria-hidden="true" data-icon="search"></span>
+              <input id="searchInput" type="search" placeholder="搜索账号、成员、备注" />
+            </div>
+            <select id="regionFilter" aria-label="地区筛选"></select>
+          </div>
+
+          <div class="status-tabs" id="statusTabs"></div>
+
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>账号</th>
+                  <th>状态</th>
+                  <th>地区/成本</th>
+                  <th>成员</th>
+                  <th>利润</th>
+                  <th>开通日期</th>
+                  <th class="action-col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="accountRows"></tbody>
+            </table>
+            <div class="empty-state" id="emptyState" hidden>没有符合条件的账号</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside class="drawer" id="drawer" aria-hidden="true">
+      <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+        <header class="drawer-header">
+          <div>
+            <p class="eyebrow">Account</p>
+            <h2 id="drawerTitle">新增账号</h2>
+          </div>
+          <button class="icon-button ghost" id="closeDrawerButton" type="button" title="关闭">
+            <span aria-hidden="true" data-icon="close"></span>
+          </button>
+        </header>
+
+        <form id="accountForm" class="account-form" autocomplete="off">
+          <input type="hidden" id="accountId" />
+
+          <label>
+            <span>账号邮箱</span>
+            <input id="emailInput" type="email" required autocomplete="off" />
+          </label>
+
+          <div class="form-grid">
+            <label>
+              <span>开通日期</span>
+              <input id="openedAtInput" type="date" required />
+            </label>
+            <label>
+              <span>状态</span>
+              <select id="statusInput"></select>
+            </label>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              <span>地区</span>
+              <input id="regionInput" type="text" required />
+            </label>
+            <label>
+              <span>成本</span>
+              <input id="costInput" type="text" required />
+            </label>
+          </div>
+
+          <div class="member-editor">
+            <div class="member-title">成员与价格</div>
+            <div class="form-grid">
+              <label>
+                <span>成员1</span>
+                <input id="member1NameInput" type="text" />
+              </label>
+              <label>
+                <span>价格1</span>
+                <input id="member1PriceInput" type="number" step="0.01" />
+              </label>
+            </div>
+            <div class="form-grid">
+              <label>
+                <span>成员2</span>
+                <input id="member2NameInput" type="text" />
+              </label>
+              <label>
+                <span>价格2</span>
+                <input id="member2PriceInput" type="number" step="0.01" />
+              </label>
+            </div>
+          </div>
+
+          <label>
+            <span>利润</span>
+            <input id="profitInput" type="number" step="0.01" required />
+          </label>
+
+          <label>
+            <span>备注</span>
+            <textarea id="notesInput" rows="4" placeholder="每行一条"></textarea>
+          </label>
+
+          <p class="form-error" id="formError" role="alert"></p>
+
+          <footer class="drawer-actions">
+            <button class="secondary-button" type="button" id="cancelButton">取消</button>
+            <button class="primary-button" type="submit">
+              <span aria-hidden="true" data-icon="save"></span>
+              保存
+            </button>
+          </footer>
+        </form>
+      </div>
+    </aside>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <template id="icons">
+      <svg data-name="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+      <svg data-name="refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.6 6.1M3 12A9 9 0 0 1 18.6 5.9M4 19v-5h5M20 5v5h-5" /></svg>
+      <svg data-name="search" viewBox="0 0 24 24"><path d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" /></svg>
+      <svg data-name="edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+      <svg data-name="trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 11v6M14 11v6" /></svg>
+      <svg data-name="close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+      <svg data-name="save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM7 3v6h8M7 21v-8h10v8" /></svg>
+    </template>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
