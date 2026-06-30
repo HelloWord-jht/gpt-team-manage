@@ -52,6 +52,45 @@ test("persists replacements across store instances", async () => {
   });
 });
 
+test("does not create temp files when listing an existing store", async () => {
+  await withTempDir(async (tempDir) => {
+    const filePath = path.join(tempDir, "records.json");
+    const store = new JsonStore(filePath, [{ id: "seed" }]);
+    await store.list();
+    const filesBefore = await fs.readdir(tempDir);
+    const directoryBefore = await fs.stat(tempDir, { bigint: true });
+
+    await store.list();
+    await store.list();
+
+    const filesAfter = await fs.readdir(tempDir);
+    const directoryAfter = await fs.stat(tempDir, { bigint: true });
+    assert.deepEqual(filesAfter, filesBefore);
+    assert.equal(directoryAfter.mtimeNs, directoryBefore.mtimeNs);
+  });
+});
+
+test("creates a new initialized store with mode 0600", async () => {
+  await withTempDir(async (tempDir) => {
+    const filePath = path.join(tempDir, "records.json");
+
+    await new JsonStore(filePath).list();
+
+    assert.equal((await fs.stat(filePath)).mode & 0o777, 0o600);
+  });
+});
+
+test("replaces store contents with mode 0600", async () => {
+  await withTempDir(async (tempDir) => {
+    const filePath = path.join(tempDir, "records.json");
+    await fs.writeFile(filePath, "[]\n", { mode: 0o600 });
+
+    await new JsonStore(filePath).replace([{ id: "replacement" }]);
+
+    assert.equal((await fs.stat(filePath)).mode & 0o777, 0o600);
+  });
+});
+
 test("publishes a complete seed before concurrent store instances can read it", async () => {
   await withTempDir(async (tempDir) => {
     const filePath = path.join(tempDir, "records.json");

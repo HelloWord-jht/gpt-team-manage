@@ -10,6 +10,16 @@ export class JsonStoreCorruptionError extends Error {
   }
 }
 
+// Abrupt termination can leave orphaned temp files; startup cleanup is out of scope.
+async function cleanupTempFile(tmpPath, primaryError) {
+  try {
+    await fs.rm(tmpPath, { force: true });
+  } catch (cleanupError) {
+    if (!primaryError) throw cleanupError;
+    primaryError.cleanupError = cleanupError;
+  }
+}
+
 export class JsonStore {
   constructor(filePath, seed = []) {
     this.filePath = filePath;
@@ -48,14 +58,22 @@ export class JsonStore {
       path.dirname(this.filePath),
       `.${path.basename(this.filePath)}.${process.pid}.${randomUUID()}.tmp`
     );
+    let primaryError = null;
 
     try {
-      await fs.writeFile(tmpPath, `${JSON.stringify(records, null, 2)}\n`, "utf8");
+      await fs.writeFile(tmpPath, `${JSON.stringify(records, null, 2)}\n`, {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
       await fs.rename(tmpPath, this.filePath);
     } catch (error) {
-      await fs.rm(tmpPath, { force: true }).catch(() => {});
-      throw error;
+      primaryError = error;
+    } finally {
+      await cleanupTempFile(tmpPath, primaryError);
     }
+
+    if (primaryError) throw primaryError;
   }
 
   update(mutator) {
@@ -96,6 +114,13 @@ export class JsonStore {
   }
 
   async initializeFile() {
+    try {
+      await fs.access(this.filePath);
+      return;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+
     if (!Array.isArray(this.seed)) {
       throw new TypeError("JsonStore records must be an array");
     }
@@ -105,14 +130,25 @@ export class JsonStore {
       path.dirname(this.filePath),
       `.${path.basename(this.filePath)}.${process.pid}.${randomUUID()}.init.tmp`
     );
+    let primaryError = null;
 
     try {
-      await fs.writeFile(tmpPath, `${JSON.stringify(this.seed, null, 2)}\n`, "utf8");
-      await fs.link(tmpPath, this.filePath);
+      await fs.writeFile(tmpPath, `${JSON.stringify(this.seed, null, 2)}\n`, {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
+      try {
+        await fs.link(tmpPath, this.filePath);
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
     } catch (error) {
-      if (error.code !== "EEXIST") throw error;
+      primaryError = error;
     } finally {
-      await fs.rm(tmpPath, { force: true });
+      await cleanupTempFile(tmpPath, primaryError);
     }
+
+    if (primaryError) throw primaryError;
   }
 }
