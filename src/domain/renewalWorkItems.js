@@ -31,14 +31,19 @@ export function buildRenewalWorkItems(accounts, options = {}) {
 
 function latestTimestampByCycle(records, field) {
   const latest = new Map();
+  const latestInstants = new Map();
 
   for (const record of Array.isArray(records) ? records : []) {
     const cycleKey = record?.cycleKey;
     const timestamp = record?.[field];
     if (!cycleKey || !timestamp) continue;
 
-    if (!latest.has(cycleKey) || timestamp > latest.get(cycleKey)) {
+    const instant = Date.parse(timestamp);
+    if (!Number.isFinite(instant)) continue;
+
+    if (!latestInstants.has(cycleKey) || instant > latestInstants.get(cycleKey)) {
       latest.set(cycleKey, timestamp);
+      latestInstants.set(cycleKey, instant);
     }
   }
 
