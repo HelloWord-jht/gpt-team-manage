@@ -122,6 +122,30 @@ test("selects duplicate records by chronological instant across fractional preci
   assert.equal(result.all[0].handledAt, "2026-06-30T01:00:00.001Z");
 });
 
+test("ignores impossible calendar timestamps when a valid record exists", () => {
+  const result = buildRenewalWorkItems(accounts, {
+    today: "2026-06-30",
+    actions: [
+      { cycleKey: "demo:2026-07-02", handledAt: "2026-02-28T23:00:00Z" },
+      { cycleKey: "demo:2026-07-02", handledAt: "2026-02-30T23:00:00Z" },
+    ],
+  });
+
+  assert.equal(result.all[0].handledAt, "2026-02-28T23:00:00Z");
+});
+
+test("selects duplicate records beyond millisecond fractional precision", () => {
+  const result = buildRenewalWorkItems(accounts, {
+    today: "2026-06-30",
+    reminderHistory: [
+      { cycleKey: "demo:2026-07-02", sentAt: "2026-06-30T01:00:00.0001Z" },
+      { cycleKey: "demo:2026-07-02", sentAt: "2026-06-30T01:00:00.0002Z" },
+    ],
+  });
+
+  assert.equal(result.all[0].sentAt, "2026-06-30T01:00:00.0002Z");
+});
+
 test("ignores malformed duplicate timestamps when a valid record exists", () => {
   const result = buildRenewalWorkItems(accounts, {
     today: "2026-06-30",
