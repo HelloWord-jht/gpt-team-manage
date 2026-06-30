@@ -101,14 +101,18 @@ export class JsonStore {
     }
 
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+    const tmpPath = path.join(
+      path.dirname(this.filePath),
+      `.${path.basename(this.filePath)}.${process.pid}.${randomUUID()}.init.tmp`
+    );
 
     try {
-      await fs.writeFile(this.filePath, `${JSON.stringify(this.seed, null, 2)}\n`, {
-        encoding: "utf8",
-        flag: "wx",
-      });
+      await fs.writeFile(tmpPath, `${JSON.stringify(this.seed, null, 2)}\n`, "utf8");
+      await fs.link(tmpPath, this.filePath);
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
+    } finally {
+      await fs.rm(tmpPath, { force: true });
     }
   }
 }

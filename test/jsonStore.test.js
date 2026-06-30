@@ -8,14 +8,6 @@ import * as jsonStoreModule from "../src/store/jsonStore.js";
 
 const { JsonStore } = jsonStoreModule;
 
-function deferred() {
-  let resolve;
-  const promise = new Promise((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
 async function withTempDir(testFn) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "team-bus-json-store-"));
 
@@ -23,6 +15,17 @@ async function withTempDir(testFn) {
     await testFn(tempDir);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function waitForFile(filePath) {
+  while (true) {
+    try {
+      return await fs.stat(filePath);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
   }
 }
 
@@ -49,37 +52,44 @@ test("persists replacements across store instances", async () => {
   });
 });
 
-test("does not let late initialization overwrite another instance's committed update", async () => {
+test("publishes a complete seed before concurrent store instances can read it", async () => {
   await withTempDir(async (tempDir) => {
     const filePath = path.join(tempDir, "records.json");
-    const seed = [{ id: "seed" }];
-    const seedReplacementStarted = deferred();
-    const releaseSeedReplacement = deferred();
+    const payload = "x".repeat(16 * 1024 * 1024);
+    const seed = [{ id: "seed", payload }];
+    const expectedSize = Buffer.byteLength(`${JSON.stringify(seed, null, 2)}\n`);
+    const writer = new JsonStore(filePath, seed).list();
+    const firstVisibleStat = await waitForFile(filePath);
+    const readers = Array.from({ length: 8 }, () =>
+      new JsonStore(filePath, []).list()
+    );
+    const results = await Promise.allSettled([writer, ...readers]);
+    const failures = results.filter((result) => result.status === "rejected");
 
-    class DelayedSeedStore extends JsonStore {
-      async replace(records) {
-        if (records === this.seed) {
-          seedReplacementStarted.resolve();
-          await releaseSeedReplacement.promise;
-        }
-        return await super.replace(records);
-      }
+    assert.equal(firstVisibleStat.size, expectedSize);
+    assert.equal(
+      failures.length,
+      0,
+      failures.map((result) => result.reason?.message).join("\n")
+    );
+    for (const result of results) {
+      assert.equal(result.value[0].payload.length, payload.length);
     }
+    assert.deepEqual(JSON.parse(await fs.readFile(filePath, "utf8")), seed);
+  });
+});
 
-    const delayedStore = new DelayedSeedStore(filePath, seed);
-    const delayedList = delayedStore.list();
-    await Promise.race([seedReplacementStarted.promise, delayedList]);
+test("removes initialization temp files after concurrent creation attempts", async () => {
+  await withTempDir(async (tempDir) => {
+    const filePath = path.join(tempDir, "records.json");
+    const stores = Array.from(
+      { length: 24 },
+      () => new JsonStore(filePath, [{ id: "seed" }])
+    );
 
-    const writerStore = new JsonStore(filePath, seed);
-    await writerStore.update((records) => [...records, { id: "committed" }]);
+    await Promise.all(stores.map((store) => store.list()));
 
-    releaseSeedReplacement.resolve();
-    await delayedList;
-
-    assert.deepEqual(await new JsonStore(filePath).list(), [
-      { id: "seed" },
-      { id: "committed" },
-    ]);
+    assert.deepEqual(await fs.readdir(tempDir), ["records.json"]);
   });
 });
 
