@@ -7,3 +7,4 @@ outputs/
 .env
 data/exchange-rates.json
 data/reminder-history.json
+.superpowers/
