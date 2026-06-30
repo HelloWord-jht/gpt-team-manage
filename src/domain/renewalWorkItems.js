@@ -46,5 +46,6 @@ function latestTimestampByCycle(records, field) {
 }
 
 function roundMoney(value) {
-  return Math.round(value * 100) / 100;
+  const cents = value * 100;
+  return Math.round(cents + Number.EPSILON * Math.abs(cents)) / 100;
 }

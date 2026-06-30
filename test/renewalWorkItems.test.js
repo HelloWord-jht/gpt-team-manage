@@ -55,3 +55,15 @@ test("does not carry a handled action into a later renewal cycle", () => {
   assert.equal(result.pending[0].cycleKey, "demo:2026-08-02");
   assert.equal(result.pending[0].handledAt, null);
 });
+
+test("rounds renewal totals to the nearest cent", () => {
+  const roundingAccount = structuredClone(accounts[0]);
+  roundingAccount.members[0].price = 1;
+  roundingAccount.members[1].price = 0.005;
+
+  const result = buildRenewalWorkItems([roundingAccount], {
+    today: "2026-06-30",
+  });
+
+  assert.equal(result.all[0].totalPrice, 1.01);
+});
