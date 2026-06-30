@@ -13,6 +13,7 @@ import {
 } from "../domain/teamBus.js";
 import { buildRenewalWorkItems } from "../domain/renewalWorkItems.js";
 import { sendOwnerRenewalDigest } from "../services/renewalReminders.js";
+import { JsonStoreCorruptionError } from "../store/jsonStore.js";
 
 const CONTENT_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -29,6 +30,8 @@ export function createApp({
   mailer = null,
   reminderHistoryStore = null,
   renewalActionStore = null,
+  now = () => new Date(),
+  logger = console,
 }) {
   return async function app(request, response) {
     try {
@@ -39,7 +42,7 @@ export function createApp({
       }
 
       if (url.pathname === "/api/accounts" && request.method === "GET") {
-        return await handleList(request, response, store, url, exchangeRates);
+        return await handleList(request, response, store, url, exchangeRates, now());
       }
 
       if (url.pathname === "/api/accounts" && request.method === "POST") {
@@ -47,7 +50,14 @@ export function createApp({
       }
 
       if (url.pathname === "/api/reminders/send" && request.method === "POST") {
-        return await handleSendReminders(request, response, store, mailer, reminderHistoryStore);
+        return await handleSendReminders(
+          request,
+          response,
+          store,
+          mailer,
+          reminderHistoryStore,
+          now()
+        );
       }
 
       if (url.pathname === "/api/renewals" && request.method === "GET") {
@@ -56,7 +66,8 @@ export function createApp({
           store,
           reminderHistoryStore,
           renewalActionStore,
-          url
+          url,
+          now()
         );
       }
 
@@ -67,25 +78,28 @@ export function createApp({
           response,
           store,
           renewalActionStore,
-          decodeURIComponent(renewalActionMatch[1])
+          decodePathSegment(renewalActionMatch[1]),
+          now()
         );
       }
 
       if (renewalActionMatch && request.method === "DELETE") {
         return await handleDeleteRenewalAction(
           response,
+          store,
           renewalActionStore,
-          decodeURIComponent(renewalActionMatch[1])
+          decodePathSegment(renewalActionMatch[1]),
+          now()
         );
       }
 
       const accountMatch = url.pathname.match(/^\/api\/accounts\/([^/]+)$/);
       if (accountMatch && request.method === "PUT") {
-        return await handleUpdate(request, response, store, decodeURIComponent(accountMatch[1]));
+        return await handleUpdate(request, response, store, decodePathSegment(accountMatch[1]));
       }
 
       if (accountMatch && request.method === "DELETE") {
-        return await handleDelete(response, store, decodeURIComponent(accountMatch[1]));
+        return await handleDelete(response, store, decodePathSegment(accountMatch[1]));
       }
 
       if (url.pathname.startsWith("/api/")) {
@@ -98,16 +112,29 @@ export function createApp({
 
       sendJson(response, 404, { error: "页面不存在" });
     } catch (error) {
+      if (!error.statusCode) {
+        try {
+          logger?.error?.(error);
+        } catch {
+          // Logging must not replace the original response.
+        }
+      }
+
       sendJson(response, error.statusCode || 500, {
-        error: error.statusCode ? error.message : "服务暂时不可用",
+        error: error.statusCode
+          ? error.message
+          : error instanceof JsonStoreCorruptionError
+            ? "数据文件损坏，请检查服务器数据文件并恢复为有效的 JSON 数组"
+            : "服务暂时不可用",
       });
     }
   };
 }
 
-async function handleList(_request, response, store, url, exchangeRates) {
-  const month = normalizeMonth(url.searchParams.get("month"));
-  const today = normalizeDate(url.searchParams.get("today"));
+async function handleList(_request, response, store, url, exchangeRates, currentDate) {
+  const defaultToday = todayInChina(currentDate);
+  const today = normalizeDate(url.searchParams.get("today"), defaultToday);
+  const month = normalizeMonth(url.searchParams.get("month"), today.slice(0, 7));
   const accounts = await withRates(await store.list(), exchangeRates);
   const monthlyAccounts = accounts
     .filter((account) => filterAccounts([account], { month }).length > 0)
@@ -133,13 +160,20 @@ async function handleList(_request, response, store, url, exchangeRates) {
   });
 }
 
-async function handleSendReminders(request, response, store, mailer, reminderHistoryStore) {
+async function handleSendReminders(
+  request,
+  response,
+  store,
+  mailer,
+  reminderHistoryStore,
+  currentDate
+) {
   if (!mailer?.isConfigured?.()) {
     return sendJson(response, 400, { error: "SMTP 未配置，请在服务器 .env 中设置 SMTP_USER 和 SMTP_PASS" });
   }
 
   const payload = await readJson(request);
-  const today = String(payload.today || todayInChina());
+  const today = String(payload.today || todayInChina(currentDate));
   const daysAhead = Number(payload.daysAhead ?? process.env.REMINDER_DAYS ?? 3);
   const accounts = await store.list();
   const result = await sendOwnerRenewalDigest({
@@ -159,10 +193,12 @@ async function handleListRenewals(
   store,
   reminderHistoryStore,
   renewalActionStore,
-  url
+  url,
+  currentDate
 ) {
-  const month = normalizeMonth(url.searchParams.get("month"));
-  const today = normalizeDate(url.searchParams.get("today"));
+  const defaultToday = todayInChina(currentDate);
+  const today = normalizeDate(url.searchParams.get("today"), defaultToday);
+  const month = normalizeMonth(url.searchParams.get("month"), today.slice(0, 7));
   const daysAhead = url.searchParams.get("daysAhead") ?? undefined;
   const [accounts, reminderHistory, actions] = await Promise.all([
     store.list(),
@@ -186,14 +222,15 @@ async function handleMarkRenewalHandled(
   response,
   store,
   renewalActionStore,
-  cycleKey
+  cycleKey,
+  currentDate
 ) {
   if (!isWritableStore(renewalActionStore)) {
     return sendJson(response, 503, { error: "续费处理记录存储不可用" });
   }
 
   const payload = await readJson(request);
-  const today = normalizeDate(payload?.today);
+  const today = todayInChina(currentDate);
   const accounts = await store.list();
   const exists = buildRenewalWorkItems(accounts, { today }).all.some(
     (item) => item.cycleKey === cycleKey
@@ -204,7 +241,7 @@ async function handleMarkRenewalHandled(
   }
 
   const handledAt =
-    payload?.handledAt === undefined ? new Date().toISOString() : payload.handledAt;
+    payload?.handledAt === undefined ? currentDate.toISOString() : payload.handledAt;
   if (!isCanonicalUtcTimestamp(handledAt)) {
     return sendJson(response, 400, {
       error:
@@ -212,28 +249,50 @@ async function handleMarkRenewalHandled(
     });
   }
 
-  const actions = await renewalActionStore.list();
   const record = { cycleKey, handledAt };
-  const nextActions = actions.filter((action) => action?.cycleKey !== cycleKey);
-  nextActions.push(record);
-  await renewalActionStore.replace(nextActions);
+  await renewalActionStore.update((actions) => [
+    ...actions.filter((action) => action?.cycleKey !== cycleKey),
+    record,
+  ]);
 
   sendJson(response, 200, { action: record });
 }
 
-async function handleDeleteRenewalAction(response, renewalActionStore, cycleKey) {
+async function handleDeleteRenewalAction(
+  response,
+  store,
+  renewalActionStore,
+  cycleKey,
+  currentDate
+) {
   if (!isWritableStore(renewalActionStore)) {
     return sendJson(response, 503, { error: "续费处理记录存储不可用" });
   }
 
-  const actions = await renewalActionStore.list();
-  const nextActions = actions.filter((action) => action?.cycleKey !== cycleKey);
+  const today = todayInChina(currentDate);
+  const accounts = await store.list();
+  const exists = buildRenewalWorkItems(accounts, { today }).all.some(
+    (item) => item.cycleKey === cycleKey
+  );
 
-  if (nextActions.length === actions.length) {
-    return sendJson(response, 404, { error: "处理记录不存在" });
+  if (!exists) {
+    return sendJson(response, 404, { error: "续费周期不存在" });
   }
 
-  await renewalActionStore.replace(nextActions);
+  const missingAction = {};
+  try {
+    await renewalActionStore.update((actions) => {
+      const nextActions = actions.filter((action) => action?.cycleKey !== cycleKey);
+      if (nextActions.length === actions.length) throw missingAction;
+      return nextActions;
+    });
+  } catch (error) {
+    if (error === missingAction) {
+      return sendJson(response, 404, { error: "处理记录不存在" });
+    }
+    throw error;
+  }
+
   sendJson(response, 200, { cycleKey, handled: false });
 }
 
@@ -324,7 +383,7 @@ async function listOptionalStore(store) {
 }
 
 function isWritableStore(store) {
-  return typeof store?.list === "function" && typeof store?.replace === "function";
+  return typeof store?.update === "function";
 }
 
 function isCanonicalUtcTimestamp(value) {
@@ -338,25 +397,54 @@ async function withRates(accounts, exchangeRates) {
   return await exchangeRates.attachRates(accounts);
 }
 
-function normalizeMonth(value) {
-  const text = String(value || "").trim();
-  if (/^\d{4}-\d{2}$/.test(text)) return text;
-  return new Date().toISOString().slice(0, 7);
+function normalizeMonth(value, fallback) {
+  if (value === null || value === undefined) return fallback;
+
+  const text = String(value).trim();
+  if (/^\d{4}-(?:0[1-9]|1[0-2])$/.test(text)) return text;
+  throw requestError(400, "month 必须是有效的 YYYY-MM 月份");
 }
 
-function normalizeDate(value) {
-  const text = String(value || "").trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
-  return todayInChina();
+function normalizeDate(value, fallback) {
+  if (value === null || value === undefined) return fallback;
+
+  const text = String(value).trim();
+  const date = new Date(`${text}T00:00:00.000Z`);
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(text) &&
+    !Number.isNaN(date.getTime()) &&
+    date.toISOString().slice(0, 10) === text
+  ) {
+    return text;
+  }
+
+  throw requestError(400, "today 必须是有效的 YYYY-MM-DD 日期");
 }
 
-function todayInChina() {
+function todayInChina(date) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date());
+  }).format(date);
+}
+
+function decodePathSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    if (error instanceof URIError) {
+      throw requestError(400, "路径参数编码不正确");
+    }
+    throw error;
+  }
+}
+
+function requestError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
 }
 
 function defaultPublicDir() {

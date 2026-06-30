@@ -4,18 +4,41 @@ import { createServer } from "node:http";
 import { describe, it } from "node:test";
 
 import { createApp } from "../src/http/app.js";
+import { JsonStoreCorruptionError } from "../src/store/jsonStore.js";
+
+const FIXED_NOW = "2026-06-30T04:00:00.000Z";
 
 function memoryStore(seed = []) {
   let records = structuredClone(seed);
+  let updateQueue = Promise.resolve();
 
   return {
     async list() {
       return structuredClone(records);
     },
     async replace(nextRecords) {
+      await new Promise((resolve) => setImmediate(resolve));
       records = structuredClone(nextRecords);
     },
+    update(mutator) {
+      const operation = updateQueue.then(async () => {
+        const currentRecords = structuredClone(records);
+        const result = await mutator(currentRecords);
+        records = structuredClone(result === undefined ? currentRecords : result);
+        return structuredClone(records);
+      });
+
+      updateQueue = operation.then(
+        () => undefined,
+        () => undefined
+      );
+      return operation;
+    },
   };
+}
+
+function fixedNow() {
+  return new Date(FIXED_NOW);
 }
 
 function renewalAccount(overrides = {}) {
@@ -315,7 +338,7 @@ describe("team bus API", () => {
         assert.equal(listPayload.pending.length, 0);
         assert.equal(listPayload.all[0].handledAt, handledAt);
       },
-      { renewalActionStore }
+      { renewalActionStore, now: fixedNow }
     );
   });
 
@@ -339,6 +362,7 @@ describe("team bus API", () => {
           new Date(defaultPayload.action.handledAt).toISOString(),
           defaultPayload.action.handledAt
         );
+        assert.equal(defaultPayload.action.handledAt, FIXED_NOW);
         const actionsAfterDefault = await renewalActionStore.list();
 
         const invalidResponse = await fetch(actionUrl, {
@@ -350,7 +374,7 @@ describe("team bus API", () => {
         assert.equal(invalidResponse.status, 400);
         assert.deepEqual(await renewalActionStore.list(), actionsAfterDefault);
       },
-      { renewalActionStore }
+      { renewalActionStore, now: fixedNow }
     );
   });
 
@@ -387,7 +411,7 @@ describe("team bus API", () => {
         assert.equal(missingResponse.status, 404);
         assert.equal(missingPayload.error, "处理记录不存在");
       },
-      { renewalActionStore }
+      { renewalActionStore, now: fixedNow }
     );
   });
 
@@ -436,7 +460,7 @@ describe("team bus API", () => {
         assert.match(invalidPayload.error, /UTC/);
         assert.deepEqual(await renewalActionStore.list(), [existingAction]);
       },
-      { renewalActionStore }
+      { renewalActionStore, now: fixedNow }
     );
   });
 
@@ -456,5 +480,210 @@ describe("team bus API", () => {
       assert.equal(postResponse.status, 503);
       assert.equal(deleteResponse.status, 503);
     });
+  });
+
+  it("derives omitted renewal dates and month from the injected Shanghai clock", async () => {
+    await withServer(
+      memoryStore([renewalAccount()]),
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/renewals`);
+        const payload = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(payload.month, "2026-07");
+        assert.equal(payload.all[0].cycleKey, "renewal-demo:2026-07-02");
+        assert.equal(payload.all[0].daysLeft, 1);
+      },
+      { now: () => new Date("2026-06-30T16:30:00.000Z") }
+    );
+  });
+
+  it("rejects invalid renewal query dates without changing actions", async () => {
+    const existingAction = {
+      cycleKey: "renewal-demo:2026-07-02",
+      handledAt: "2026-06-30T08:30:00.000Z",
+    };
+    const renewalActionStore = memoryStore([existingAction]);
+
+    await withServer(
+      memoryStore([renewalAccount()]),
+      async (baseUrl) => {
+        const invalidTodayResponse = await fetch(
+          `${baseUrl}/api/renewals?today=2026-02-30`
+        );
+        const invalidTodayPayload = await invalidTodayResponse.json();
+        const invalidMonthResponse = await fetch(
+          `${baseUrl}/api/renewals?today=2026-06-30&month=2026-13`
+        );
+        const invalidMonthPayload = await invalidMonthResponse.json();
+
+        assert.equal(invalidTodayResponse.status, 400);
+        assert.equal(invalidTodayPayload.error, "today 必须是有效的 YYYY-MM-DD 日期");
+        assert.equal(invalidMonthResponse.status, 400);
+        assert.equal(invalidMonthPayload.error, "month 必须是有效的 YYYY-MM 月份");
+        assert.deepEqual(await renewalActionStore.list(), [existingAction]);
+      },
+      { renewalActionStore, now: fixedNow }
+    );
+  });
+
+  it("rejects a future renewal cycle even when the POST body supplies a future date", async () => {
+    const renewalActionStore = memoryStore();
+    const futureCycleKey = "renewal-demo:2026-08-02";
+
+    await withServer(
+      memoryStore([renewalAccount()]),
+      async (baseUrl) => {
+        const response = await fetch(
+          `${baseUrl}/api/renewals/${encodeURIComponent(futureCycleKey)}/handled`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              today: "2026-07-30",
+              handledAt: "2026-06-30T08:30:00.000Z",
+            }),
+          }
+        );
+        const payload = await response.json();
+
+        assert.equal(response.status, 404);
+        assert.equal(payload.error, "续费周期不存在");
+        assert.deepEqual(await renewalActionStore.list(), []);
+      },
+      { renewalActionStore, now: fixedNow }
+    );
+  });
+
+  it("rejects deleting a stale handled cycle without changing actions", async () => {
+    const staleAction = {
+      cycleKey: "renewal-demo:2026-07-02",
+      handledAt: "2026-06-30T08:30:00.000Z",
+    };
+    const renewalActionStore = memoryStore([staleAction]);
+
+    await withServer(
+      memoryStore([renewalAccount()]),
+      async (baseUrl) => {
+        const response = await fetch(
+          `${baseUrl}/api/renewals/${encodeURIComponent(staleAction.cycleKey)}/handled`,
+          { method: "DELETE" }
+        );
+        const payload = await response.json();
+
+        assert.equal(response.status, 404);
+        assert.equal(payload.error, "续费周期不存在");
+        assert.deepEqual(await renewalActionStore.list(), [staleAction]);
+      },
+      {
+        renewalActionStore,
+        now: () => new Date("2026-07-30T04:00:00.000Z"),
+      }
+    );
+  });
+
+  it("persists concurrent marks for two current renewal cycles", async () => {
+    const renewalActionStore = memoryStore();
+    const accounts = [
+      renewalAccount({ id: "renewal-one", email: "one@example.com" }),
+      renewalAccount({ id: "renewal-two", email: "two@example.com" }),
+    ];
+    const marks = [
+      {
+        cycleKey: "renewal-one:2026-07-02",
+        handledAt: "2026-06-30T08:30:00.000Z",
+      },
+      {
+        cycleKey: "renewal-two:2026-07-02",
+        handledAt: "2026-06-30T08:31:00.000Z",
+      },
+    ];
+
+    await withServer(
+      memoryStore(accounts),
+      async (baseUrl) => {
+        const responses = await Promise.all(
+          marks.map(({ cycleKey, handledAt }) =>
+            fetch(`${baseUrl}/api/renewals/${encodeURIComponent(cycleKey)}/handled`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ handledAt }),
+            })
+          )
+        );
+
+        assert.deepEqual(
+          responses.map((response) => response.status),
+          [200, 200]
+        );
+        assert.deepEqual(
+          (await renewalActionStore.list()).sort((a, b) =>
+            a.cycleKey.localeCompare(b.cycleKey)
+          ),
+          marks
+        );
+      },
+      { renewalActionStore, now: fixedNow }
+    );
+  });
+
+  it("logs corrupt store errors and returns an actionable safe response", async () => {
+    const corruptionError = new JsonStoreCorruptionError(
+      "/private/data/team-bus.json",
+      "invalid JSON"
+    );
+    const logged = [];
+    const corruptStore = {
+      async list() {
+        throw corruptionError;
+      },
+    };
+
+    await withServer(
+      corruptStore,
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/renewals?today=2026-06-30`);
+        const payload = await response.json();
+
+        assert.equal(response.status, 500);
+        assert.equal(
+          payload.error,
+          "数据文件损坏，请检查服务器数据文件并恢复为有效的 JSON 数组"
+        );
+        assert.equal(logged.length, 1);
+        assert.ok(logged[0].includes(corruptionError));
+      },
+      {
+        logger: {
+          error(...args) {
+            logged.push(args);
+          },
+        },
+        now: fixedNow,
+      }
+    );
+  });
+
+  it("returns 400 for malformed path encoding without changing actions", async () => {
+    const existingAction = {
+      cycleKey: "renewal-demo:2026-07-02",
+      handledAt: "2026-06-30T08:30:00.000Z",
+    };
+    const renewalActionStore = memoryStore([existingAction]);
+
+    await withServer(
+      memoryStore([renewalAccount()]),
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/renewals/%E0%A4%A/handled`, {
+          method: "DELETE",
+        });
+        const payload = await response.json();
+
+        assert.equal(response.status, 400);
+        assert.equal(payload.error, "路径参数编码不正确");
+        assert.deepEqual(await renewalActionStore.list(), [existingAction]);
+      },
+      { renewalActionStore, now: fixedNow }
+    );
   });
 });
