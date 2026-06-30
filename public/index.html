@@ -7,44 +7,68 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">Team Bus</p>
-          <h1>账号车位管理</h1>
+    <header class="topbar-band">
+      <div class="topbar">
+        <div class="brand-lockup">
+          <h1>Team Bus 管理台</h1>
+          <p>账号与成员</p>
         </div>
         <div class="topbar-actions">
-          <button class="icon-button ghost" id="refreshButton" type="button" title="刷新">
+          <button
+            class="icon-button topbar-icon-button"
+            id="refreshButton"
+            type="button"
+            aria-label="刷新账号与续费数据"
+            title="刷新"
+          >
             <span aria-hidden="true" data-icon="refresh"></span>
           </button>
-          <button class="secondary-button" id="sendReminderButton" type="button">
-            <span aria-hidden="true" data-icon="mail"></span>
-            续费提醒
+          <button class="topbar-button" id="renewalWorkbenchButton" type="button">
+            <span aria-hidden="true" data-icon="alert"></span>
+            <span>续费工作台</span>
+            <span class="count-badge" id="pendingRenewalBadge" aria-label="0 个待处理续费">0</span>
           </button>
           <button class="primary-button" id="newAccountButton" type="button">
             <span aria-hidden="true" data-icon="plus"></span>
-            新增账号
+            <span>新增账号</span>
           </button>
         </div>
-      </header>
+      </div>
+    </header>
 
+    <div class="app-shell">
       <main>
-        <section class="metrics" id="metrics"></section>
+        <section class="metrics" id="metrics" aria-label="账号概览"></section>
 
-        <section class="workspace">
+        <section class="workspace" aria-label="账号管理工作区">
           <div class="toolbar">
             <div class="search-box">
               <span aria-hidden="true" data-icon="search"></span>
-              <input id="searchInput" type="search" placeholder="搜索账号、成员、备注" />
+              <input
+                id="searchInput"
+                type="search"
+                aria-label="搜索账号、成员或备注"
+                placeholder="搜索账号、成员、备注"
+              />
             </div>
             <input id="monthFilter" class="month-filter" type="month" aria-label="月份筛选" />
             <select id="regionFilter" aria-label="地区筛选"></select>
           </div>
 
-          <div class="status-tabs" id="statusTabs"></div>
+          <div class="status-tabs" id="statusTabs" aria-label="账号状态筛选"></div>
 
           <div class="table-shell">
             <table>
+              <colgroup>
+                <col class="account-column" />
+                <col class="status-column" />
+                <col class="region-column" />
+                <col class="members-column" />
+                <col class="profit-column" />
+                <col class="renewal-column" />
+                <col class="opened-column" />
+                <col class="actions-column" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>账号</th>
@@ -65,81 +89,236 @@
       </main>
     </div>
 
-    <aside class="drawer" id="drawer" aria-hidden="true">
-      <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
-        <header class="drawer-header">
+    <div class="modal-layer" id="accountModal" aria-hidden="true">
+      <section
+        class="modal account-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="accountModalTitle"
+      >
+        <header class="modal-header">
           <div>
-            <p class="eyebrow">Account</p>
-            <h2 id="drawerTitle">新增账号</h2>
+            <p class="modal-context">账号资料</p>
+            <h2 id="accountModalTitle">新增账号</h2>
           </div>
-          <button class="icon-button ghost" id="closeDrawerButton" type="button" title="关闭">
+          <button
+            class="icon-button ghost"
+            id="closeAccountModalButton"
+            type="button"
+            aria-label="关闭账号弹框"
+            title="关闭"
+          >
             <span aria-hidden="true" data-icon="close"></span>
           </button>
         </header>
 
         <form id="accountForm" class="account-form" autocomplete="off">
-          <input type="hidden" id="accountId" />
+          <div class="modal-body">
+            <input type="hidden" id="accountId" />
 
-          <label>
-            <span>账号邮箱</span>
-            <input id="emailInput" type="email" required autocomplete="off" />
-          </label>
+            <label class="form-span">
+              <span>账号邮箱</span>
+              <input id="emailInput" type="email" required autocomplete="off" />
+            </label>
 
-          <div class="form-grid">
-            <label>
-              <span>开通日期</span>
-              <input id="openedAtInput" type="date" required />
-            </label>
-            <label>
-              <span>状态</span>
-              <select id="statusInput"></select>
-            </label>
-          </div>
-
-          <div class="form-grid">
-            <label>
-              <span>地区</span>
-              <input id="regionInput" type="text" required />
-            </label>
-            <label>
-              <span>成本</span>
-              <input id="costInput" type="text" required />
-            </label>
-          </div>
-
-          <div class="member-editor">
-            <div class="member-title-row">
-              <div class="member-title">成员与上下车</div>
-              <button class="secondary-button compact-button" id="addMemberButton" type="button">
-                <span aria-hidden="true" data-icon="plus"></span>
-                添加成员
-              </button>
+            <div class="form-grid">
+              <label>
+                <span>开通日期</span>
+                <input id="openedAtInput" type="date" required />
+              </label>
+              <label>
+                <span>状态</span>
+                <select id="statusInput" required></select>
+              </label>
+              <label>
+                <span>地区</span>
+                <input id="regionInput" type="text" required />
+              </label>
+              <label>
+                <span>成本</span>
+                <input id="costInput" type="text" required />
+              </label>
             </div>
-            <div class="member-rows" id="memberRows"></div>
+
+            <section class="member-editor" aria-labelledby="memberSectionTitle">
+              <div class="member-title-row">
+                <div>
+                  <h3 id="memberSectionTitle">成员与上下车</h3>
+                  <p>单独编辑成员资料，保存账号时统一提交</p>
+                </div>
+                <button class="secondary-button compact-button" id="addMemberButton" type="button">
+                  <span aria-hidden="true" data-icon="plus"></span>
+                  <span>添加成员</span>
+                </button>
+              </div>
+              <div class="member-summary-list" id="memberRows"></div>
+            </section>
+
+            <div class="form-grid">
+              <label>
+                <span>利润</span>
+                <input id="profitInput" type="number" step="0.01" required />
+              </label>
+              <label>
+                <span>备注</span>
+                <textarea id="notesInput" rows="4" placeholder="每行一条"></textarea>
+              </label>
+            </div>
+
+            <p class="form-error" id="formError" role="alert"></p>
           </div>
 
-          <label>
-            <span>利润</span>
-            <input id="profitInput" type="number" step="0.01" required />
-          </label>
-
-          <label>
-            <span>备注</span>
-            <textarea id="notesInput" rows="4" placeholder="每行一条"></textarea>
-          </label>
-
-          <p class="form-error" id="formError" role="alert"></p>
-
-          <footer class="drawer-actions">
+          <footer class="modal-actions">
             <button class="secondary-button" type="button" id="cancelButton">取消</button>
-            <button class="primary-button" type="submit">
+            <button class="primary-button stable-action-button" id="saveAccountButton" type="submit">
               <span aria-hidden="true" data-icon="save"></span>
-              保存
+              <span id="saveAccountButtonLabel">保存账号</span>
             </button>
           </footer>
         </form>
-      </div>
-    </aside>
+      </section>
+    </div>
+
+    <div class="modal-layer nested-layer" id="memberModal" aria-hidden="true">
+      <section
+        class="modal member-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="memberModalTitle"
+      >
+        <header class="modal-header">
+          <div>
+            <p class="modal-context">成员资料</p>
+            <h2 id="memberModalTitle">新增成员</h2>
+          </div>
+          <button
+            class="icon-button ghost"
+            id="closeMemberModalButton"
+            type="button"
+            aria-label="关闭成员弹框"
+            title="关闭"
+          >
+            <span aria-hidden="true" data-icon="close"></span>
+          </button>
+        </header>
+
+        <form id="memberForm" autocomplete="off">
+          <div class="modal-body member-form-grid">
+            <label class="form-span">
+              <span>成员名称</span>
+              <input id="memberNameInput" type="text" required />
+            </label>
+            <label class="form-span">
+              <span>成员邮箱</span>
+              <input id="memberEmailInput" type="email" />
+            </label>
+            <label>
+              <span>续费价格</span>
+              <input id="memberPriceInput" type="number" min="0" step="0.01" required />
+            </label>
+            <label>
+              <span>上车日期</span>
+              <input id="memberJoinedAtInput" type="date" required />
+            </label>
+            <label class="form-span">
+              <span>下车日期</span>
+              <input id="memberLeftAtInput" type="date" />
+            </label>
+            <p class="form-error form-span" id="memberFormError" role="alert"></p>
+          </div>
+
+          <footer class="modal-actions">
+            <button class="secondary-button" id="cancelMemberButton" type="button">取消</button>
+            <button class="primary-button stable-action-button" type="submit">
+              <span aria-hidden="true" data-icon="check"></span>
+              <span>确认成员</span>
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-layer" id="renewalModal" aria-hidden="true">
+      <section
+        class="modal renewal-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="renewalModalTitle"
+      >
+        <header class="modal-header">
+          <div>
+            <p class="modal-context">续费周期</p>
+            <h2 id="renewalModalTitle">续费工作台</h2>
+          </div>
+          <button
+            class="icon-button ghost"
+            id="closeRenewalModalButton"
+            type="button"
+            aria-label="关闭续费工作台"
+            title="关闭"
+          >
+            <span aria-hidden="true" data-icon="close"></span>
+          </button>
+        </header>
+
+        <div class="modal-body renewal-modal-body">
+          <div class="renewal-toolbar">
+            <div class="segmented-control" id="renewalViewTabs" aria-label="续费视图">
+              <button class="is-active" type="button" data-renewal-view="pending">
+                待处理 <span id="pendingRenewalCount">0</span>
+              </button>
+              <button type="button" data-renewal-view="all">
+                全部周期 <span id="allRenewalCount">0</span>
+              </button>
+            </div>
+            <button
+              class="secondary-button stable-digest-button"
+              id="sendRenewalDigestButton"
+              type="button"
+            >
+              <span aria-hidden="true" data-icon="mail"></span>
+              <span id="sendRenewalDigestButtonLabel">发送待续费摘要</span>
+            </button>
+          </div>
+
+          <p class="form-error renewal-error" id="renewalError" role="alert"></p>
+          <div class="renewal-list" id="renewalRows"></div>
+          <div class="inline-empty" id="renewalEmptyState" hidden>当前没有待处理续费</div>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-layer nested-layer" id="confirmModal" aria-hidden="true">
+      <section
+        class="modal confirm-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirmModalTitle"
+        aria-describedby="confirmModalDescription"
+      >
+        <header class="modal-header confirm-header">
+          <span class="alert-icon" aria-hidden="true" data-icon="alert"></span>
+          <h2 id="confirmModalTitle">删除账号</h2>
+        </header>
+        <div class="modal-body confirm-body">
+          <p id="confirmModalDescription">
+            确定删除 <strong id="confirmAccountEmail"></strong> 吗？此操作无法撤销。
+          </p>
+          <p class="form-error" id="confirmError" role="alert"></p>
+        </div>
+        <footer class="modal-actions">
+          <button class="secondary-button" id="cancelDeleteButton" type="button">取消</button>
+          <button
+            class="danger-button stable-action-button"
+            id="confirmDeleteButton"
+            type="button"
+          >
+            <span aria-hidden="true" data-icon="trash"></span>
+            <span id="confirmDeleteButtonLabel">删除账号</span>
+          </button>
+        </footer>
+      </section>
+    </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -152,6 +331,10 @@
       <svg data-name="close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
       <svg data-name="save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM7 3v6h8M7 21v-8h10v8" /></svg>
       <svg data-name="mail" viewBox="0 0 24 24"><path d="M4 6h16v12H4z" /><path d="m4 7 8 6 8-6" /></svg>
+      <svg data-name="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
+      <svg data-name="undo" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5M5 12h8a6 6 0 0 1 6 6" /></svg>
+      <svg data-name="alert" viewBox="0 0 24 24"><path d="M12 4 3 20h18L12 4Z" /><path d="M12 9v5M12 17.5v.5" /></svg>
+      <svg data-name="chevron-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg>
     </template>
 
     <script src="/app.js" type="module"></script>
