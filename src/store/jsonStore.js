@@ -14,7 +14,10 @@ export class JsonStore {
   constructor(filePath, seed = []) {
     this.filePath = filePath;
     this.seed = seed;
+    // Updates serialize per instance; initialization is exclusive across instances.
+    // Cross-process read-modify-write locking is outside this app's single-process runtime.
     this.updateQueue = Promise.resolve();
+    this.initializationPromise = null;
   }
 
   async list() {
@@ -76,11 +79,36 @@ export class JsonStore {
   }
 
   async ensureFile() {
+    if (this.initializationPromise) {
+      return await this.initializationPromise;
+    }
+
+    const initialization = this.initializeFile();
+    this.initializationPromise = initialization;
+
     try {
-      await fs.access(this.filePath);
+      await initialization;
+    } finally {
+      if (this.initializationPromise === initialization) {
+        this.initializationPromise = null;
+      }
+    }
+  }
+
+  async initializeFile() {
+    if (!Array.isArray(this.seed)) {
+      throw new TypeError("JsonStore records must be an array");
+    }
+
+    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+
+    try {
+      await fs.writeFile(this.filePath, `${JSON.stringify(this.seed, null, 2)}\n`, {
+        encoding: "utf8",
+        flag: "wx",
+      });
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-      await this.replace(this.seed);
+      if (error.code !== "EEXIST") throw error;
     }
   }
 }

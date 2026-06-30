@@ -410,6 +410,20 @@ describe("team bus API", () => {
 
         assert.equal(missingResponse.status, 404);
         assert.equal(missingPayload.error, "处理记录不存在");
+
+        const postResponse = await fetch(actionUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ handledAt: "2026-06-30T09:00:00.000Z" }),
+        });
+        const postPayload = await postResponse.json();
+
+        assert.equal(postResponse.status, 200);
+        assert.deepEqual(postPayload.action, {
+          cycleKey,
+          handledAt: "2026-06-30T09:00:00.000Z",
+        });
+        assert.deepEqual(await renewalActionStore.list(), [postPayload.action]);
       },
       { renewalActionStore, now: fixedNow }
     );
