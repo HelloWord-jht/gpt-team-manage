@@ -16,9 +16,19 @@ const host = process.env.HOST || "127.0.0.1";
 
 const store = new JsonStore(dataPath);
 const reminderHistoryStore = new JsonStore(path.join(rootDir, "data", "reminder-history.json"));
+const renewalActionStore = new JsonStore(path.join(rootDir, "data", "renewal-actions.json"));
 const exchangeRates = new ExchangeRateService(path.join(rootDir, "data", "exchange-rates.json"));
 const mailer = new SmtpMailer();
-const server = createServer(createApp({ store, publicDir, exchangeRates, mailer, reminderHistoryStore }));
+const server = createServer(
+  createApp({
+    store,
+    publicDir,
+    exchangeRates,
+    mailer,
+    reminderHistoryStore,
+    renewalActionStore,
+  })
+);
 
 startReminderScheduler({ store, reminderHistoryStore, mailer });
 

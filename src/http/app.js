@@ -11,6 +11,7 @@ import {
   statusDefinitions,
   summarizeAccounts,
 } from "../domain/teamBus.js";
+import { buildRenewalWorkItems } from "../domain/renewalWorkItems.js";
 import { sendOwnerRenewalDigest } from "../services/renewalReminders.js";
 
 const CONTENT_TYPES = {
@@ -27,6 +28,7 @@ export function createApp({
   exchangeRates = null,
   mailer = null,
   reminderHistoryStore = null,
+  renewalActionStore = null,
 }) {
   return async function app(request, response) {
     try {
@@ -46,6 +48,35 @@ export function createApp({
 
       if (url.pathname === "/api/reminders/send" && request.method === "POST") {
         return await handleSendReminders(request, response, store, mailer, reminderHistoryStore);
+      }
+
+      if (url.pathname === "/api/renewals" && request.method === "GET") {
+        return await handleListRenewals(
+          response,
+          store,
+          reminderHistoryStore,
+          renewalActionStore,
+          url
+        );
+      }
+
+      const renewalActionMatch = url.pathname.match(/^\/api\/renewals\/([^/]+)\/handled$/);
+      if (renewalActionMatch && request.method === "POST") {
+        return await handleMarkRenewalHandled(
+          request,
+          response,
+          store,
+          renewalActionStore,
+          decodeURIComponent(renewalActionMatch[1])
+        );
+      }
+
+      if (renewalActionMatch && request.method === "DELETE") {
+        return await handleDeleteRenewalAction(
+          response,
+          renewalActionStore,
+          decodeURIComponent(renewalActionMatch[1])
+        );
       }
 
       const accountMatch = url.pathname.match(/^\/api\/accounts\/([^/]+)$/);
@@ -121,6 +152,89 @@ async function handleSendReminders(request, response, store, mailer, reminderHis
   });
 
   sendJson(response, 200, result);
+}
+
+async function handleListRenewals(
+  response,
+  store,
+  reminderHistoryStore,
+  renewalActionStore,
+  url
+) {
+  const month = normalizeMonth(url.searchParams.get("month"));
+  const today = normalizeDate(url.searchParams.get("today"));
+  const daysAhead = url.searchParams.get("daysAhead") ?? undefined;
+  const [accounts, reminderHistory, actions] = await Promise.all([
+    store.list(),
+    listOptionalStore(reminderHistoryStore),
+    listOptionalStore(renewalActionStore),
+  ]);
+
+  sendJson(response, 200, {
+    month,
+    ...buildRenewalWorkItems(accounts, {
+      today,
+      daysAhead,
+      reminderHistory,
+      actions,
+    }),
+  });
+}
+
+async function handleMarkRenewalHandled(
+  request,
+  response,
+  store,
+  renewalActionStore,
+  cycleKey
+) {
+  if (!isWritableStore(renewalActionStore)) {
+    return sendJson(response, 503, { error: "续费处理记录存储不可用" });
+  }
+
+  const payload = await readJson(request);
+  const today = normalizeDate(payload?.today);
+  const accounts = await store.list();
+  const exists = buildRenewalWorkItems(accounts, { today }).all.some(
+    (item) => item.cycleKey === cycleKey
+  );
+
+  if (!exists) {
+    return sendJson(response, 404, { error: "续费周期不存在" });
+  }
+
+  const handledAt =
+    payload?.handledAt === undefined ? new Date().toISOString() : payload.handledAt;
+  if (!isCanonicalUtcTimestamp(handledAt)) {
+    return sendJson(response, 400, {
+      error:
+        "handledAt 必须是 Date#toISOString() 生成的标准 UTC 时间，例如 2026-06-30T08:30:00.000Z",
+    });
+  }
+
+  const actions = await renewalActionStore.list();
+  const record = { cycleKey, handledAt };
+  const nextActions = actions.filter((action) => action?.cycleKey !== cycleKey);
+  nextActions.push(record);
+  await renewalActionStore.replace(nextActions);
+
+  sendJson(response, 200, { action: record });
+}
+
+async function handleDeleteRenewalAction(response, renewalActionStore, cycleKey) {
+  if (!isWritableStore(renewalActionStore)) {
+    return sendJson(response, 503, { error: "续费处理记录存储不可用" });
+  }
+
+  const actions = await renewalActionStore.list();
+  const nextActions = actions.filter((action) => action?.cycleKey !== cycleKey);
+
+  if (nextActions.length === actions.length) {
+    return sendJson(response, 404, { error: "处理记录不存在" });
+  }
+
+  await renewalActionStore.replace(nextActions);
+  sendJson(response, 200, { cycleKey, handled: false });
 }
 
 async function handleCreate(request, response, store) {
@@ -203,6 +317,20 @@ async function serveStatic(response, publicDir, requestPath) {
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(payload));
+}
+
+async function listOptionalStore(store) {
+  return typeof store?.list === "function" ? await store.list() : [];
+}
+
+function isWritableStore(store) {
+  return typeof store?.list === "function" && typeof store?.replace === "function";
+}
+
+function isCanonicalUtcTimestamp(value) {
+  if (typeof value !== "string") return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.toISOString() === value;
 }
 
 async function withRates(accounts, exchangeRates) {
