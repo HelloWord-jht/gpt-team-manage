@@ -108,6 +108,51 @@ describe("team bus API", () => {
     );
   });
 
+  it("counts seats from active accounts only", async () => {
+    await withServer(
+      memoryStore([
+        ...Array.from({ length: 6 }, (_, index) => ({
+          id: `active-${index + 1}`,
+          email: `active-${index + 1}@example.com`,
+          openedAt: "2026-06-01",
+          region: "美国",
+          cost: "20U",
+          members: [
+            { name: `A${index + 1}`, email: "", price: 100, joinedAt: "2026-06-01", leftAt: "" },
+            { name: `B${index + 1}`, email: "", price: 100, joinedAt: "2026-06-01", leftAt: "" },
+          ],
+          profit: 0,
+          status: "active",
+          notes: [],
+        })),
+        {
+          id: "blocked",
+          email: "blocked@example.com",
+          openedAt: "2026-06-01",
+          region: "法国",
+          cost: "15欧",
+          members: [
+            { name: "Inactive A", email: "", price: 100, joinedAt: "2026-06-01", leftAt: "" },
+            { name: "Inactive B", email: "", price: 100, joinedAt: "2026-06-01", leftAt: "" },
+          ],
+          profit: 0,
+          status: "blocked",
+          notes: ["已封号"],
+        },
+      ]),
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/accounts?month=2026-07`);
+        const payload = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(payload.summary.totalAccounts, 7);
+        assert.equal(payload.summary.activeAccounts, 6);
+        assert.equal(payload.summary.usedSlots, 12);
+        assert.equal(payload.summary.totalSlots, 12);
+      }
+    );
+  });
+
   it("creates, updates, and deletes an account through JSON endpoints", async () => {
     await withServer(memoryStore(), async (baseUrl) => {
       const createResponse = await fetch(`${baseUrl}/api/accounts`, {

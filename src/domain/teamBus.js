@@ -55,11 +55,12 @@ export function normalizeLegacyRows(rows) {
 }
 
 export function summarizeAccounts(accounts) {
+  const activeAccounts = accounts.filter((account) => account.status === "active");
   const totalProfit = accounts.reduce(
     (sum, account) => sum + toNumber(account.computedProfitCny ?? account.profit, 0),
     0
   );
-  const usedSlots = accounts.reduce((sum, account) => sum + visibleMembers(account).length, 0);
+  const usedSlots = activeAccounts.reduce((sum, account) => sum + visibleMembers(account).length, 0);
   const statusCounts = new Map(STATUS_DEFINITIONS.map((status) => [status.key, 0]));
   const regionMap = new Map();
 
@@ -99,7 +100,7 @@ export function summarizeAccounts(accounts) {
     issueAccounts: accounts.length - (statusCounts.get("active") ?? 0),
     totalProfit,
     usedSlots,
-    totalSlots: accounts.length * 2,
+    totalSlots: (statusCounts.get("active") ?? 0) * 2,
     statuses,
     regions,
   };
@@ -220,7 +221,8 @@ export function parseCost(rawCost) {
   if (/COP/.test(upper)) currency = "COP";
   else if (/JPY/.test(upper)) currency = "JPY";
   else if (/PHP/.test(upper)) currency = "PHP";
-  else if (/USD|USDT|U$/.test(upper)) currency = "USD";
+  else if (/SGD/.test(upper) || /(^|[^A-Z])S\$/.test(upper) || /新币|新加坡元/.test(normalized)) currency = "SGD";
+  else if (/USD|USDT|US\$|U$/.test(upper)) currency = "USD";
   else if (/EUR/.test(upper) || /欧/.test(normalized)) currency = "EUR";
   else if (/CNY|RMB|人民币|元/.test(upper)) currency = "CNY";
 

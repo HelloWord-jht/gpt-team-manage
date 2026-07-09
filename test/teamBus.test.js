@@ -63,7 +63,7 @@ describe("team bus domain", () => {
     assert.equal(summary.issueAccounts, 2);
     assert.equal(summary.totalProfit, 250);
     assert.equal(summary.usedSlots, 8);
-    assert.equal(summary.totalSlots, 12);
+    assert.equal(summary.totalSlots, 8);
     assert.deepEqual(summary.statuses, [
       { key: "active", label: "正常", count: 4 },
       { key: "blocked", label: "封号", count: 1 },
@@ -93,6 +93,10 @@ describe("team bus domain", () => {
     assert.deepEqual(parseCost("15.01欧"), { raw: "15.01欧", amount: 15.01, currency: "EUR" });
     assert.deepEqual(parseCost("3850JPY"), { raw: "3850JPY", amount: 3850, currency: "JPY" });
     assert.deepEqual(parseCost("1,201PHP"), { raw: "1,201PHP", amount: 1201, currency: "PHP" });
+    assert.deepEqual(parseCost("25SGD"), { raw: "25SGD", amount: 25, currency: "SGD" });
+    assert.deepEqual(parseCost("S$25"), { raw: "S$25", amount: 25, currency: "SGD" });
+    assert.deepEqual(parseCost("25新币"), { raw: "25新币", amount: 25, currency: "SGD" });
+    assert.deepEqual(parseCost("US$20"), { raw: "US$20", amount: 20, currency: "USD" });
   });
 
   it("projects accounts by month with member lifecycle and real RMB cost", () => {

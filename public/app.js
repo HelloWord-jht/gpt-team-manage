@@ -387,7 +387,6 @@ function rowHtml(account) {
       <td>
         <div class="account-cell">
           <strong>${escapeHtml(account.email)}</strong>
-          <span class="muted">${escapeHtml(account.id)}</span>
         </div>
       </td>
       <td>
