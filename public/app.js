@@ -25,6 +25,11 @@ const state = {
   renewals: emptyRenewals(),
   renewalsLoaded: false,
   renewalView: "pending",
+  financeView: "snapshot",
+  snapshot: null,
+  snapshotMonth: currentMonth,
+  snapshots: [],
+  backups: [],
   pendingDelete: null,
   modalFocusTriggers: new Map(),
   loading: {
@@ -34,6 +39,11 @@ const state = {
     renewalAction: "",
     sendDigest: false,
     deleteAccount: false,
+    snapshot: false,
+    createSnapshot: false,
+    backups: false,
+    createBackup: false,
+    restoreBackup: false,
   },
 };
 
@@ -50,6 +60,7 @@ const els = {
   toast: document.querySelector("#toast"),
   newAccount: document.querySelector("#newAccountButton"),
   renewalWorkbench: document.querySelector("#renewalWorkbenchButton"),
+  financeCenter: document.querySelector("#financeCenterButton"),
   pendingRenewalBadge: document.querySelector("#pendingRenewalBadge"),
   refresh: document.querySelector("#refreshButton"),
   accountModal: document.querySelector("#accountModal"),
@@ -76,6 +87,25 @@ const els = {
   renewalRows: document.querySelector("#renewalRows"),
   renewalEmpty: document.querySelector("#renewalEmptyState"),
   renewalError: document.querySelector("#renewalError"),
+  financeModal: document.querySelector("#financeModal"),
+  closeFinanceModal: document.querySelector("#closeFinanceModalButton"),
+  financeViewTabs: document.querySelector("#financeViewTabs"),
+  snapshotMonth: document.querySelector("#snapshotMonthInput"),
+  financeError: document.querySelector("#financeError"),
+  snapshotPanel: document.querySelector("#snapshotPanel"),
+  backupPanel: document.querySelector("#backupPanel"),
+  createSnapshot: document.querySelector("#createSnapshotButton"),
+  createSnapshotLabel: document.querySelector("#createSnapshotButtonLabel"),
+  snapshotStatus: document.querySelector("#snapshotStatus"),
+  snapshotMetrics: document.querySelector("#snapshotMetrics"),
+  snapshotEvents: document.querySelector("#snapshotEvents"),
+  snapshotAccounts: document.querySelector("#snapshotAccounts"),
+  createBackup: document.querySelector("#createBackupButton"),
+  createBackupLabel: document.querySelector("#createBackupButtonLabel"),
+  backupSelect: document.querySelector("#backupSelect"),
+  restoreBackup: document.querySelector("#restoreBackupButton"),
+  restoreBackupLabel: document.querySelector("#restoreBackupButtonLabel"),
+  backupRows: document.querySelector("#backupRows"),
   confirmModal: document.querySelector("#confirmModal"),
   confirmAccountEmail: document.querySelector("#confirmAccountEmail"),
   confirmError: document.querySelector("#confirmError"),
@@ -99,6 +129,7 @@ const memberInputs = {
   name: document.querySelector("#memberNameInput"),
   email: document.querySelector("#memberEmailInput"),
   price: document.querySelector("#memberPriceInput"),
+  paymentStatus: document.querySelector("#memberPaymentStatusInput"),
   joinedAt: document.querySelector("#memberJoinedAtInput"),
   leftAt: document.querySelector("#memberLeftAtInput"),
 };
@@ -108,6 +139,13 @@ const statusLabels = {
   blocked: "封号",
   canceled: "已退订",
   refunded: "已退款",
+};
+
+const paymentLabels = {
+  unpaid: "未付款",
+  partial: "部分付款",
+  paid: "已付款",
+  refunded: "已退费",
 };
 
 installIcons();
@@ -135,6 +173,9 @@ function bindEvents() {
   els.newAccount.addEventListener("click", (event) => openAccountModal(null, event.currentTarget));
   els.renewalWorkbench.addEventListener("click", (event) => {
     openRenewalModal(event.currentTarget);
+  });
+  els.financeCenter.addEventListener("click", (event) => {
+    openFinanceModal(event.currentTarget);
   });
   els.refresh.addEventListener("click", refreshAll);
 
@@ -164,6 +205,26 @@ function bindEvents() {
     renderRenewalWorkbench();
   });
   els.sendRenewalDigest.addEventListener("click", sendReminders);
+
+  els.closeFinanceModal.addEventListener("click", closeFinanceModal);
+  els.financeModal.addEventListener("click", (event) => {
+    if (event.target === els.financeModal) closeFinanceModal();
+  });
+  els.financeViewTabs.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-finance-view]");
+    if (!button) return;
+    state.financeView = button.dataset.financeView;
+    renderFinanceCenter();
+    if (state.financeView === "snapshot") void loadSnapshot();
+    if (state.financeView === "backups") void loadBackups();
+  });
+  els.snapshotMonth.addEventListener("change", () => {
+    state.snapshotMonth = els.snapshotMonth.value || state.filters.month;
+    void loadSnapshot();
+  });
+  els.createSnapshot.addEventListener("click", createSnapshot);
+  els.createBackup.addEventListener("click", createBackup);
+  els.restoreBackup.addEventListener("click", restoreBackup);
 
   els.cancelDelete.addEventListener("click", closeDeleteConfirm);
   els.confirmDelete.addEventListener("click", confirmDeleteAccount);
@@ -235,6 +296,8 @@ function renderMetrics() {
     totalProfit: 0,
     usedSlots: 0,
     totalSlots: 0,
+    totalRevenue: 0,
+    receivable: 0,
   };
   const occupancy = summary.totalSlots
     ? Math.round((summary.usedSlots / summary.totalSlots) * 100)
@@ -247,7 +310,11 @@ function renderMetrics() {
       `${summary.usedSlots}/${summary.totalSlots}`,
       `使用率 ${occupancy}%`,
     ],
-    ["真实利润", `¥${money(summary.totalProfit)}`, `${state.filters.month} 月视图`],
+    [
+      "真实利润",
+      `¥${money(summary.totalProfit)}`,
+      `收入 ¥${money(summary.totalRevenue)} / 待收 ¥${money(summary.receivable)}`,
+    ],
     [
       "即将续费",
       dueCount,
@@ -296,6 +363,24 @@ function renderFilters() {
   inputs.status.value = statuses.some((status) => status.key === currentStatus)
     ? currentStatus
     : "active";
+
+  renderMemberPaymentOptions(memberInputs.paymentStatus.value || "unpaid");
+}
+
+function renderMemberPaymentOptions(currentStatus = "unpaid") {
+  const statuses =
+    Array.isArray(state.options.paymentStatuses) && state.options.paymentStatuses.length
+      ? state.options.paymentStatuses
+      : Object.entries(paymentLabels).map(([key, label]) => ({ key, label }));
+  memberInputs.paymentStatus.innerHTML = statuses
+    .map(
+      (status) =>
+        `<option value="${escapeAttr(status.key)}">${escapeHtml(status.label)}</option>`
+    )
+    .join("");
+  memberInputs.paymentStatus.value = statuses.some((status) => status.key === currentStatus)
+    ? currentStatus
+    : "unpaid";
 }
 
 function renderStatusTabs() {
@@ -361,6 +446,7 @@ function rowHtml(account) {
               <div>
                 <strong>${escapeHtml(member.name)}</strong>
                 <span class="muted">${escapeHtml(member.email || "未填邮箱")}</span>
+                ${paymentBadge(member.paymentStatus)}
               </div>
               <div class="member-money">
                 <span>¥${money(member.price)}</span>
@@ -445,6 +531,11 @@ function renewalHtml(renewal) {
   `;
 }
 
+function paymentBadge(status) {
+  const key = paymentLabels[status] ? status : "unpaid";
+  return `<span class="payment-badge ${escapeAttr(key)}">${escapeHtml(paymentLabels[key])}</span>`;
+}
+
 function filteredAccounts() {
   const query = state.filters.query.trim().toLowerCase();
   return state.accounts.filter((account) => {
@@ -463,6 +554,8 @@ function filteredAccounts() {
         member.price,
         member.joinedAt,
         member.leftAt,
+        member.paymentStatus,
+        paymentLabels[member.paymentStatus] || "",
       ]),
       ...(account.notes || []),
       account.profit,
@@ -537,6 +630,7 @@ function memberSummaryHtml(member, index) {
       </div>
       <div class="member-summary-meta">
         <strong>¥${money(member.price)}</strong>
+        ${paymentBadge(member.paymentStatus)}
         <span>${escapeHtml(lifecycle)}</span>
       </div>
       <div class="member-summary-actions">
@@ -572,6 +666,7 @@ function openMemberModal(index = null, trigger = document.activeElement) {
           name: "",
           email: "",
           price: "",
+          paymentStatus: "unpaid",
           joinedAt: inputs.openedAt.value || localToday(),
           leftAt: "",
         }
@@ -594,6 +689,7 @@ function writeMemberInputs(member) {
   memberInputs.name.value = member?.name || "";
   memberInputs.email.value = member?.email || "";
   memberInputs.price.value = member?.price ?? "";
+  renderMemberPaymentOptions(member?.paymentStatus || "unpaid");
   memberInputs.joinedAt.value =
     member?.joinedAt || inputs.openedAt.value || localToday();
   memberInputs.leftAt.value = member?.leftAt || "";
@@ -606,6 +702,7 @@ function saveMemberDraft(event) {
   const name = memberInputs.name.value.trim();
   const email = memberInputs.email.value.trim();
   const price = memberInputs.price.valueAsNumber;
+  const paymentStatus = memberInputs.paymentStatus.value;
   const joinedAt = memberInputs.joinedAt.value;
   const leftAt = memberInputs.leftAt.value;
 
@@ -634,6 +731,7 @@ function saveMemberDraft(event) {
     name,
     email,
     price,
+    paymentStatus,
     joinedAt,
     leftAt,
   });
@@ -760,6 +858,295 @@ function openRenewalModal(trigger = document.activeElement) {
 function closeRenewalModal() {
   closeLayer(els.renewalModal);
   els.renewalError.textContent = "";
+}
+
+function openFinanceModal(trigger = document.activeElement) {
+  state.financeView = "snapshot";
+  state.snapshotMonth = state.filters.month;
+  els.snapshotMonth.value = state.snapshotMonth;
+  els.financeError.textContent = "";
+  renderFinanceCenter();
+  openLayer(els.financeModal, els.financeViewTabs.querySelector("[data-finance-view='snapshot']"), trigger);
+  void Promise.allSettled([loadSnapshot(), loadBackups()]);
+}
+
+function closeFinanceModal() {
+  if (state.loading.createSnapshot || state.loading.createBackup || state.loading.restoreBackup) return;
+  closeLayer(els.financeModal);
+  els.financeError.textContent = "";
+}
+
+async function loadSnapshot() {
+  const url = new URL("/api/snapshots", window.location.origin);
+  url.searchParams.set("month", state.snapshotMonth || state.filters.month);
+  state.loading.snapshot = true;
+  els.financeError.textContent = "";
+  renderFinanceCenter();
+
+  try {
+    const payload = await requestJson(url);
+    state.snapshot = payload.snapshot || null;
+    state.snapshots = Array.isArray(payload.snapshots) ? payload.snapshots : [];
+    state.snapshotMonth = payload.month || state.snapshotMonth;
+    els.snapshotMonth.value = state.snapshotMonth;
+    renderFinanceCenter();
+    return true;
+  } catch (error) {
+    const message = error.message || "快照加载失败";
+    els.financeError.textContent = message;
+    showToast(message);
+    return false;
+  } finally {
+    state.loading.snapshot = false;
+    renderFinanceCenter();
+  }
+}
+
+async function loadBackups() {
+  state.loading.backups = true;
+  renderFinanceCenter();
+
+  try {
+    const payload = await requestJson("/api/backups");
+    state.backups = Array.isArray(payload.backups) ? payload.backups : [];
+    renderFinanceCenter();
+    return true;
+  } catch (error) {
+    const message = error.message || "备份加载失败";
+    els.financeError.textContent = message;
+    showToast(message);
+    return false;
+  } finally {
+    state.loading.backups = false;
+    renderFinanceCenter();
+  }
+}
+
+function renderFinanceCenter() {
+  if (!els.financeModal) return;
+
+  els.financeViewTabs.querySelectorAll("[data-finance-view]").forEach((button) => {
+    const active = button.dataset.financeView === state.financeView;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+
+  els.snapshotPanel.hidden = state.financeView !== "snapshot";
+  els.backupPanel.hidden = state.financeView !== "backups";
+  els.snapshotMonth.hidden = state.financeView !== "snapshot";
+  renderSnapshotPanel();
+  renderBackupPanel();
+  installIcons();
+}
+
+function renderSnapshotPanel() {
+  els.createSnapshot.disabled = state.loading.snapshot || state.loading.createSnapshot;
+  els.createSnapshot.setAttribute("aria-busy", String(state.loading.createSnapshot));
+  els.createSnapshotLabel.textContent = state.loading.createSnapshot ? "生成中..." : "生成快照";
+
+  if (state.loading.snapshot && !state.snapshot) {
+    els.snapshotStatus.innerHTML = `<div class="inline-loading">正在加载快照...</div>`;
+    els.snapshotMetrics.innerHTML = "";
+    els.snapshotEvents.innerHTML = "";
+    els.snapshotAccounts.innerHTML = "";
+    return;
+  }
+
+  if (!state.snapshot) {
+    els.snapshotStatus.innerHTML = `<div class="inline-empty compact-empty">${escapeHtml(state.snapshotMonth)} 尚未生成快照</div>`;
+    els.snapshotMetrics.innerHTML = "";
+    els.snapshotEvents.innerHTML = "";
+    els.snapshotAccounts.innerHTML = "";
+    return;
+  }
+
+  const snapshot = state.snapshot;
+  const totals = snapshot.totals || {};
+  els.snapshotStatus.innerHTML = `
+    <div class="snapshot-status-line">
+      <strong>${escapeHtml(snapshot.month)} 月结算</strong>
+      <span>${escapeHtml(formatDateTime(snapshot.generatedAt))} 生成</span>
+    </div>
+  `;
+  els.snapshotMetrics.innerHTML = [
+    ["收入", `¥${money(totals.revenueCny)}`],
+    ["成本", `¥${money(totals.costCny)}`],
+    ["利润", `¥${money(totals.profitCny)}`],
+    ["待收", `¥${money(totals.receivableCny)}`],
+  ]
+    .map(
+      ([label, value]) => `
+        <article class="mini-metric">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </article>
+      `
+    )
+    .join("");
+  els.snapshotEvents.innerHTML = snapshotEventsHtml(snapshot.events || {});
+  els.snapshotAccounts.innerHTML = snapshotAccountsHtml(snapshot.accounts || []);
+}
+
+function snapshotEventsHtml(events) {
+  const joined = Array.isArray(events.joined) ? events.joined : [];
+  const left = Array.isArray(events.left) ? events.left : [];
+  const eventRows = [
+    ...joined.map((event) => ({ ...event, type: "上车" })),
+    ...left.map((event) => ({ ...event, type: "下车" })),
+  ].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  if (!eventRows.length) return `<div class="inline-empty compact-empty">本月没有上下车记录</div>`;
+
+  return eventRows
+    .map(
+      (event) => `
+        <div class="event-row">
+          <span class="event-type">${escapeHtml(event.type)}</span>
+          <div>
+            <strong>${escapeHtml(event.memberName || "未命名成员")}</strong>
+            <span>${escapeHtml(event.accountEmail || "")}</span>
+          </div>
+          <time>${escapeHtml(event.date || "")}</time>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function snapshotAccountsHtml(accounts) {
+  if (!accounts.length) return `<div class="inline-empty compact-empty">快照内没有账号</div>`;
+
+  return accounts
+    .map(
+      (account) => `
+        <article class="snapshot-account">
+          <div>
+            <strong>${escapeHtml(account.email)}</strong>
+            <span>${escapeHtml(account.region)} / ${escapeHtml(statusLabels[account.status] || account.status)}</span>
+          </div>
+          <div class="snapshot-account-money">
+            <span>收入 ¥${money(account.revenueCny)}</span>
+            <span>成本 ¥${money(account.costCny)}</span>
+            <strong>利润 ¥${money(account.profitCny)}</strong>
+          </div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function renderBackupPanel() {
+  const selectedBackup = els.backupSelect.value;
+  els.createBackup.disabled = state.loading.createBackup || state.loading.backups;
+  els.createBackup.setAttribute("aria-busy", String(state.loading.createBackup));
+  els.createBackupLabel.textContent = state.loading.createBackup ? "创建中..." : "创建备份";
+
+  const hasBackups = state.backups.length > 0;
+  els.backupSelect.disabled = !hasBackups || state.loading.restoreBackup;
+  els.restoreBackup.disabled = !hasBackups || state.loading.restoreBackup;
+  els.restoreBackup.setAttribute("aria-busy", String(state.loading.restoreBackup));
+  els.restoreBackupLabel.textContent = state.loading.restoreBackup ? "恢复中..." : "恢复备份";
+  els.backupSelect.innerHTML = hasBackups
+    ? state.backups
+        .map(
+          (backup) =>
+            `<option value="${escapeAttr(backup.id)}">${escapeHtml(formatBackupLabel(backup))}</option>`
+        )
+        .join("")
+    : `<option value="">暂无备份</option>`;
+  if (hasBackups && state.backups.some((backup) => backup.id === selectedBackup)) {
+    els.backupSelect.value = selectedBackup;
+  }
+
+  els.backupRows.innerHTML = state.loading.backups
+    ? `<div class="inline-loading">正在加载备份...</div>`
+    : hasBackups
+      ? state.backups.map(backupRowHtml).join("")
+      : `<div class="inline-empty compact-empty">还没有备份</div>`;
+}
+
+function backupRowHtml(backup) {
+  return `
+    <article class="backup-row">
+      <div>
+        <strong>${escapeHtml(formatBackupLabel(backup))}</strong>
+        <span>${escapeHtml(backup.id)}</span>
+      </div>
+      <div>
+        <span>${escapeHtml(backup.fileCount)} 个文件</span>
+        <strong>${escapeHtml(formatBytes(backup.size))}</strong>
+      </div>
+    </article>
+  `;
+}
+
+async function createSnapshot() {
+  if (state.loading.createSnapshot) return;
+  state.loading.createSnapshot = true;
+  els.financeError.textContent = "";
+  renderFinanceCenter();
+
+  try {
+    await requestJson("/api/snapshots", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ month: state.snapshotMonth, overwrite: true }),
+    });
+    await loadSnapshot();
+    showToast("结算快照已生成");
+  } catch (error) {
+    const message = error.message || "快照生成失败";
+    els.financeError.textContent = message;
+    showToast(message);
+  } finally {
+    state.loading.createSnapshot = false;
+    renderFinanceCenter();
+  }
+}
+
+async function createBackup() {
+  if (state.loading.createBackup) return;
+  state.loading.createBackup = true;
+  els.financeError.textContent = "";
+  renderFinanceCenter();
+
+  try {
+    await requestJson("/api/backups", { method: "POST" });
+    await loadBackups();
+    showToast("数据备份已创建");
+  } catch (error) {
+    const message = error.message || "备份创建失败";
+    els.financeError.textContent = message;
+    showToast(message);
+  } finally {
+    state.loading.createBackup = false;
+    renderFinanceCenter();
+  }
+}
+
+async function restoreBackup() {
+  const backupId = els.backupSelect.value;
+  if (!backupId || state.loading.restoreBackup) return;
+  if (!window.confirm(`确定恢复备份 ${formatBackupLabel({ id: backupId })} 吗？当前 data JSON 会被覆盖。`)) return;
+
+  state.loading.restoreBackup = true;
+  els.financeError.textContent = "";
+  renderFinanceCenter();
+
+  try {
+    await requestJson(`/api/backups/${encodeURIComponent(backupId)}/restore`, {
+      method: "POST",
+    });
+    await Promise.allSettled([loadAccounts(), loadRenewals(), loadSnapshot(), loadBackups()]);
+    showToast("数据已从备份恢复");
+  } catch (error) {
+    const message = error.message || "恢复失败";
+    els.financeError.textContent = message;
+    showToast(message);
+  } finally {
+    state.loading.restoreBackup = false;
+    renderFinanceCenter();
+  }
 }
 
 function renderRenewalWorkbench() {
@@ -999,6 +1386,7 @@ function updateBodyLock() {
     els.accountModal,
     els.memberModal,
     els.renewalModal,
+    els.financeModal,
     els.confirmModal,
   ].some(isLayerOpen);
   document.body.classList.toggle("modal-open", anyOpen);
@@ -1012,6 +1400,7 @@ function handleDocumentKeydown(event) {
     event.preventDefault();
     if (topLayer === els.confirmModal) return closeDeleteConfirm();
     if (topLayer === els.memberModal) return closeMemberModal();
+    if (topLayer === els.financeModal) return closeFinanceModal();
     if (topLayer === els.renewalModal) return closeRenewalModal();
     if (topLayer === els.accountModal) closeAccountModal();
     return;
@@ -1021,7 +1410,7 @@ function handleDocumentKeydown(event) {
 }
 
 function topOpenLayer() {
-  return [els.confirmModal, els.memberModal, els.renewalModal, els.accountModal].find(
+  return [els.confirmModal, els.memberModal, els.financeModal, els.renewalModal, els.accountModal].find(
     isLayerOpen
   );
 }
@@ -1103,6 +1492,19 @@ function formatDateTime(value) {
     minute: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function formatBackupLabel(backup) {
+  const date = backup.createdAt ? formatDateTime(backup.createdAt) : backup.id || "";
+  return date || String(backup.id || "");
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function localToday(date = new Date()) {

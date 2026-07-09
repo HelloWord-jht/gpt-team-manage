@@ -28,6 +28,10 @@
             <span>续费工作台</span>
             <span class="count-badge" id="pendingRenewalBadge" aria-label="0 个待处理续费">0</span>
           </button>
+          <button class="topbar-button" id="financeCenterButton" type="button">
+            <span aria-hidden="true" data-icon="archive"></span>
+            <span>账务中心</span>
+          </button>
           <button class="primary-button" id="newAccountButton" type="button">
             <span aria-hidden="true" data-icon="plus"></span>
             <span>新增账号</span>
@@ -217,6 +221,10 @@
               <input id="memberPriceInput" type="number" min="0" step="0.01" required />
             </label>
             <label>
+              <span>付款状态</span>
+              <select id="memberPaymentStatusInput" required></select>
+            </label>
+            <label>
               <span>上车日期</span>
               <input id="memberJoinedAtInput" type="date" required />
             </label>
@@ -288,6 +296,79 @@
       </section>
     </div>
 
+    <div class="modal-layer" id="financeModal" aria-hidden="true">
+      <section
+        class="modal finance-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="financeModalTitle"
+      >
+        <header class="modal-header">
+          <div>
+            <p class="modal-context">结算与备份</p>
+            <h2 id="financeModalTitle">账务中心</h2>
+          </div>
+          <button
+            class="icon-button ghost"
+            id="closeFinanceModalButton"
+            type="button"
+            aria-label="关闭账务中心"
+            title="关闭"
+          >
+            <span aria-hidden="true" data-icon="close"></span>
+          </button>
+        </header>
+
+        <div class="modal-body finance-modal-body">
+          <div class="finance-toolbar">
+            <div class="segmented-control" id="financeViewTabs" aria-label="账务视图">
+              <button class="is-active" type="button" data-finance-view="snapshot">结算快照</button>
+              <button type="button" data-finance-view="backups">数据备份</button>
+            </div>
+            <input id="snapshotMonthInput" class="month-filter" type="month" aria-label="快照月份" />
+          </div>
+
+          <p class="form-error finance-error" id="financeError" role="alert"></p>
+
+          <section class="finance-panel" id="snapshotPanel">
+            <div class="panel-actions">
+              <button class="primary-button stable-action-button" id="createSnapshotButton" type="button">
+                <span aria-hidden="true" data-icon="save"></span>
+                <span id="createSnapshotButtonLabel">生成快照</span>
+              </button>
+            </div>
+            <div class="snapshot-status" id="snapshotStatus"></div>
+            <div class="snapshot-metrics" id="snapshotMetrics"></div>
+            <div class="snapshot-grid">
+              <section class="snapshot-block" aria-labelledby="snapshotEventsTitle">
+                <h3 id="snapshotEventsTitle">上下车</h3>
+                <div id="snapshotEvents"></div>
+              </section>
+              <section class="snapshot-block" aria-labelledby="snapshotAccountsTitle">
+                <h3 id="snapshotAccountsTitle">账号结算</h3>
+                <div id="snapshotAccounts"></div>
+              </section>
+            </div>
+          </section>
+
+          <section class="finance-panel" id="backupPanel" hidden>
+            <div class="backup-toolbar">
+              <button class="primary-button stable-action-button" id="createBackupButton" type="button">
+                <span aria-hidden="true" data-icon="download"></span>
+                <span id="createBackupButtonLabel">创建备份</span>
+              </button>
+              <select id="backupSelect" aria-label="选择备份"></select>
+              <button class="danger-button stable-action-button" id="restoreBackupButton" type="button">
+                <span aria-hidden="true" data-icon="upload"></span>
+                <span id="restoreBackupButtonLabel">恢复备份</span>
+              </button>
+            </div>
+            <div class="backup-list" id="backupRows"></div>
+          </section>
+        </div>
+      </section>
+    </div>
+
     <div class="modal-layer nested-layer" id="confirmModal" aria-hidden="true">
       <section
         class="modal confirm-modal"
@@ -335,6 +416,9 @@
       <svg data-name="undo" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5M5 12h8a6 6 0 0 1 6 6" /></svg>
       <svg data-name="alert" viewBox="0 0 24 24"><path d="M12 4 3 20h18L12 4Z" /><path d="M12 9v5M12 17.5v.5" /></svg>
       <svg data-name="chevron-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg>
+      <svg data-name="archive" viewBox="0 0 24 24"><path d="M4 7h16M5 7l1 13h12l1-13M3 3h18v4H3z" /><path d="M9 12h6" /></svg>
+      <svg data-name="download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
+      <svg data-name="upload" viewBox="0 0 24 24"><path d="M12 21V9M7 14l5-5 5 5M5 3h14" /></svg>
     </template>
 
     <script src="/app.js" type="module"></script>

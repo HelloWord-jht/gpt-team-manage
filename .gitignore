@@ -8,4 +8,6 @@ outputs/
 data/exchange-rates.json
 data/reminder-history.json
 data/renewal-actions.json
+data/monthly-snapshots.json
+data/backups/
 .superpowers/

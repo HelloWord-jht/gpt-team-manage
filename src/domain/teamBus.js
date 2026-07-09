@@ -6,6 +6,13 @@ const STATUS_DEFINITIONS = [
 ];
 
 const VALID_STATUSES = new Set(STATUS_DEFINITIONS.map((status) => status.key));
+const PAYMENT_STATUS_DEFINITIONS = [
+  { key: "unpaid", label: "未付款" },
+  { key: "partial", label: "部分付款" },
+  { key: "paid", label: "已付款" },
+  { key: "refunded", label: "已退费" },
+];
+const VALID_PAYMENT_STATUSES = new Set(PAYMENT_STATUS_DEFINITIONS.map((status) => status.key));
 
 export function excelSerialToISO(serial) {
   if (serial instanceof Date) {
@@ -56,11 +63,30 @@ export function normalizeLegacyRows(rows) {
 
 export function summarizeAccounts(accounts) {
   const activeAccounts = accounts.filter((account) => account.status === "active");
+  const visibleActiveMembers = activeAccounts.flatMap((account) => visibleMembers(account));
+  const paymentCounts = new Map(PAYMENT_STATUS_DEFINITIONS.map((status) => [status.key, 0]));
   const totalProfit = accounts.reduce(
     (sum, account) => sum + toNumber(account.computedProfitCny ?? account.profit, 0),
     0
   );
   const usedSlots = activeAccounts.reduce((sum, account) => sum + visibleMembers(account).length, 0);
+  const totalRevenue = activeAccounts.reduce(
+    (sum, account) =>
+      sum +
+      toNumber(
+        account.revenueCny,
+        visibleMembers(account).reduce((memberSum, member) => memberSum + toNumber(member.price, 0), 0)
+      ),
+    0
+  );
+  const totalCost = activeAccounts.reduce((sum, account) => sum + toNumber(account.costCny, 0), 0);
+  const receivable = visibleActiveMembers.reduce(
+    (sum, member) =>
+      ["unpaid", "partial"].includes(member.paymentStatus)
+        ? sum + toNumber(member.price, 0)
+        : sum,
+    0
+  );
   const statusCounts = new Map(STATUS_DEFINITIONS.map((status) => [status.key, 0]));
   const regionMap = new Map();
 
@@ -81,9 +107,18 @@ export function summarizeAccounts(accounts) {
     regionMap.set(region, current);
   });
 
+  visibleActiveMembers.forEach((member) => {
+    const status = normalizePaymentStatus(member.paymentStatus);
+    paymentCounts.set(status, (paymentCounts.get(status) ?? 0) + 1);
+  });
+
   const statuses = STATUS_DEFINITIONS.map((status) => ({
     ...status,
     count: statusCounts.get(status.key) ?? 0,
+  }));
+  const paymentStatuses = PAYMENT_STATUS_DEFINITIONS.map((status) => ({
+    ...status,
+    count: paymentCounts.get(status.key) ?? 0,
   }));
 
   const regions = Array.from(regionMap.values())
@@ -99,9 +134,13 @@ export function summarizeAccounts(accounts) {
     activeAccounts: statusCounts.get("active") ?? 0,
     issueAccounts: accounts.length - (statusCounts.get("active") ?? 0),
     totalProfit,
+    totalRevenue,
+    totalCost,
     usedSlots,
     totalSlots: (statusCounts.get("active") ?? 0) * 2,
+    receivable,
     statuses,
+    paymentStatuses,
     regions,
   };
 }
@@ -140,6 +179,7 @@ export function sanitizeAccount(payload, options = {}) {
           price: toNumber(member?.price, NaN),
           joinedAt: String(member?.joinedAt ?? openedAt).trim(),
           leftAt: String(member?.leftAt ?? "").trim(),
+          paymentStatus: String(member?.paymentStatus ?? "unpaid").trim() || "unpaid",
         }))
         .filter((member) => member.name || member.email || Number.isFinite(member.price))
     : [];
@@ -170,6 +210,9 @@ export function sanitizeAccount(payload, options = {}) {
       errors.push(`成员${index + 1}邮箱格式不正确`);
     }
     if (!Number.isFinite(member.price)) errors.push(`成员${index + 1}价格必须是数字`);
+    if (!VALID_PAYMENT_STATUSES.has(member.paymentStatus)) {
+      errors.push(`成员${index + 1}付款状态不受支持`);
+    }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(member.joinedAt)) {
       errors.push(`成员${index + 1}上车日期必须是 YYYY-MM-DD`);
     }
@@ -207,6 +250,10 @@ export function sanitizeAccount(payload, options = {}) {
 
 export function statusDefinitions() {
   return STATUS_DEFINITIONS.map((status) => ({ ...status }));
+}
+
+export function paymentStatusDefinitions() {
+  return PAYMENT_STATUS_DEFINITIONS.map((status) => ({ ...status }));
 }
 
 export function parseCost(rawCost) {
@@ -368,7 +415,15 @@ function searchableText(account) {
     account.region,
     account.cost,
     account.status,
-    ...visibleMembers(account).flatMap((member) => [member.name, member.email, member.price, member.joinedAt, member.leftAt]),
+    ...visibleMembers(account).flatMap((member) => [
+      member.name,
+      member.email,
+      member.price,
+      member.joinedAt,
+      member.leftAt,
+      member.paymentStatus,
+      paymentStatusLabel(member.paymentStatus),
+    ]),
     ...account.notes,
     account.profit,
   ]
@@ -383,7 +438,18 @@ function normalizeMember(member, openedAt) {
     price: toNumber(member?.price, 0),
     joinedAt: String(member?.joinedAt || openedAt).trim(),
     leftAt: String(member?.leftAt ?? "").trim(),
+    paymentStatus: normalizePaymentStatus(member?.paymentStatus),
   };
+}
+
+function normalizePaymentStatus(value) {
+  const status = String(value ?? "unpaid").trim() || "unpaid";
+  return VALID_PAYMENT_STATUSES.has(status) ? status : "unpaid";
+}
+
+function paymentStatusLabel(value) {
+  const status = normalizePaymentStatus(value);
+  return PAYMENT_STATUS_DEFINITIONS.find((definition) => definition.key === status)?.label || status;
 }
 
 function isAccountVisibleInMonth(account, month) {

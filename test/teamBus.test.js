@@ -9,6 +9,7 @@ import {
   parseCost,
   projectAccountForMonth,
   normalizeLegacyRows,
+  sanitizeAccount,
   summarizeAccounts,
 } from "../src/domain/teamBus.js";
 
@@ -76,6 +77,42 @@ describe("team bus domain", () => {
       { region: "菲律宾", count: 1, profit: 80 },
       { region: "法国", count: 1, profit: 0 },
     ]);
+  });
+
+  it("summarizes member payment status and validates saved values", () => {
+    const account = {
+      id: "payment-demo",
+      email: "payment@example.com",
+      openedAt: "2026-06-01",
+      region: "美国",
+      cost: "20U",
+      members: [
+        { name: "Paid", email: "paid@example.com", price: 100, joinedAt: "2026-06-01", leftAt: "", paymentStatus: "paid" },
+        { name: "Unpaid", email: "unpaid@example.com", price: 120, joinedAt: "2026-06-01", leftAt: "", paymentStatus: "unpaid" },
+        { name: "Partial", email: "partial@example.com", price: 80, joinedAt: "2026-06-01", leftAt: "", paymentStatus: "partial" },
+      ],
+      profit: 0,
+      status: "active",
+      notes: [],
+    };
+    const summary = summarizeAccounts([projectAccountForMonth(account, "2026-06")]);
+
+    assert.equal(summary.receivable, 200);
+    assert.deepEqual(summary.paymentStatuses, [
+      { key: "unpaid", label: "未付款", count: 1 },
+      { key: "partial", label: "部分付款", count: 1 },
+      { key: "paid", label: "已付款", count: 1 },
+      { key: "refunded", label: "已退费", count: 0 },
+    ]);
+    assert.equal(filterAccounts([account], { query: "部分付款" }).length, 1);
+    assert.throws(
+      () =>
+        sanitizeAccount({
+          ...account,
+          members: [{ ...account.members[0], paymentStatus: "mystery" }],
+        }),
+      /付款状态/
+    );
   });
 
   it("filters by status, region, and fuzzy account/member text", () => {

@@ -255,6 +255,112 @@ describe("team bus API", () => {
     );
   });
 
+  it("creates and lists monthly settlement snapshots", async () => {
+    const monthlySnapshotStore = memoryStore();
+
+    await withServer(
+      memoryStore([
+        {
+          id: "demo",
+          email: "demo@example.com",
+          openedAt: "2026-06-01",
+          region: "美国",
+          cost: "20U",
+          members: [
+            { name: "A", email: "a@example.com", price: 100, joinedAt: "2026-06-01", leftAt: "2026-06-30", paymentStatus: "paid" },
+            { name: "B", email: "b@example.com", price: 120, joinedAt: "2026-07-01", leftAt: "", paymentStatus: "unpaid" },
+          ],
+          profit: 64,
+          status: "active",
+          notes: [],
+        },
+      ]),
+      async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/api/snapshots`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ month: "2026-07" }),
+        });
+        const created = await createResponse.json();
+
+        assert.equal(createResponse.status, 201);
+        assert.equal(created.created, true);
+        assert.equal(created.snapshot.month, "2026-07");
+        assert.equal(created.snapshot.totals.revenueCny, 120);
+        assert.equal(created.snapshot.totals.receivableCny, 120);
+        assert.equal(created.snapshot.events.joined[0].memberName, "B");
+
+        const listResponse = await fetch(`${baseUrl}/api/snapshots?month=2026-07`);
+        const listed = await listResponse.json();
+
+        assert.equal(listResponse.status, 200);
+        assert.equal(listed.snapshot.month, "2026-07");
+        assert.equal(listed.snapshots[0].month, "2026-07");
+        assert.equal((await monthlySnapshotStore.list()).length, 1);
+      },
+      {
+        monthlySnapshotStore,
+        exchangeRates: {
+          async attachRates(accounts) {
+            return accounts.map((account) => ({
+              ...account,
+              exchangeRate: { currency: "USD", date: "2026-06-01", rateToCny: 7, source: "test" },
+            }));
+          },
+        },
+        now: fixedNow,
+      }
+    );
+  });
+
+  it("lists, creates, and restores data backups through the API", async () => {
+    const backups = [];
+    let restoredId = "";
+    const backupService = {
+      async listBackups() {
+        return backups;
+      },
+      async createBackup({ now }) {
+        const backup = {
+          id: "team-bus-backup-20260630-040000-1234abcd.json",
+          createdAt: now.toISOString(),
+          size: 128,
+          fileCount: 4,
+        };
+        backups.unshift(backup);
+        return backup;
+      },
+      async restoreBackup(id) {
+        restoredId = id;
+        return { id, restoredAt: "2026-06-30T04:01:00.000Z", fileCount: 4 };
+      },
+    };
+
+    await withServer(
+      memoryStore(),
+      async (baseUrl) => {
+        const emptyResponse = await fetch(`${baseUrl}/api/backups`);
+        const emptyPayload = await emptyResponse.json();
+        const createResponse = await fetch(`${baseUrl}/api/backups`, { method: "POST" });
+        const created = await createResponse.json();
+        const restoreResponse = await fetch(
+          `${baseUrl}/api/backups/${encodeURIComponent(created.backup.id)}/restore`,
+          { method: "POST" }
+        );
+        const restored = await restoreResponse.json();
+
+        assert.equal(emptyResponse.status, 200);
+        assert.deepEqual(emptyPayload.backups, []);
+        assert.equal(createResponse.status, 201);
+        assert.equal(created.backup.fileCount, 4);
+        assert.equal(restoreResponse.status, 200);
+        assert.equal(restored.restore.id, created.backup.id);
+        assert.equal(restoredId, created.backup.id);
+      },
+      { backupService, now: fixedNow }
+    );
+  });
+
   it("sends renewal reminders through injected mailer", async () => {
     const sent = [];
     const reminderHistoryStore = memoryStore();

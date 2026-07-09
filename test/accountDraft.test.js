@@ -25,6 +25,7 @@ describe("account draft", () => {
           price: 100,
           joinedAt: "2026-06-01",
           leftAt: "",
+          paymentStatus: "paid",
         },
       ],
     };
@@ -63,7 +64,7 @@ describe("account draft", () => {
     const draft = createAccountDraft(
       {
         members: [
-          { name: "A", email: "a@example.com", price: 100, joinedAt: "2026-06-01", leftAt: "" },
+          { name: "A", email: "a@example.com", price: 100, joinedAt: "2026-06-01", leftAt: "", paymentStatus: "paid" },
           { name: "B", email: "b@example.com", price: 110, joinedAt: "2026-06-02", leftAt: "" },
         ],
       },
@@ -75,6 +76,7 @@ describe("account draft", () => {
       price: 120,
       joinedAt: "2026-06-03",
       leftAt: "2026-06-29",
+      paymentStatus: "partial",
       ignored: true,
     };
 
@@ -88,6 +90,7 @@ describe("account draft", () => {
       price: 120,
       joinedAt: "2026-06-03",
       leftAt: "2026-06-29",
+      paymentStatus: "partial",
     });
     assert.notStrictEqual(changed, draft);
     assert.notStrictEqual(changed.members, draft.members);
@@ -101,6 +104,7 @@ describe("account draft", () => {
       price: 120,
       joinedAt: "2026-06-30",
       leftAt: "",
+      paymentStatus: "unpaid",
     };
 
     for (const index of [null, -1, 0, 1.5, "0"]) {

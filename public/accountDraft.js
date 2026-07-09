@@ -40,5 +40,6 @@ function cloneMember(member) {
     price: member?.price ?? "",
     joinedAt: String(member?.joinedAt || ""),
     leftAt: String(member?.leftAt || ""),
+    paymentStatus: String(member?.paymentStatus || "unpaid"),
   };
 }

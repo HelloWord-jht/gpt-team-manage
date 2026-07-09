@@ -6,11 +6,17 @@ import {
   buildRenewalReminders,
   compareAccountsForDisplay,
   filterAccounts,
+  paymentStatusDefinitions,
   projectAccountForMonth,
   sanitizeAccount,
   statusDefinitions,
   summarizeAccounts,
 } from "../domain/teamBus.js";
+import {
+  buildMonthlySnapshot,
+  snapshotMetadata,
+  upsertMonthlySnapshot,
+} from "../domain/monthlySnapshots.js";
 import { buildRenewalWorkItems } from "../domain/renewalWorkItems.js";
 import { sendOwnerRenewalDigest } from "../services/renewalReminders.js";
 import { JsonStoreCorruptionError } from "../store/jsonStore.js";
@@ -30,6 +36,8 @@ export function createApp({
   mailer = null,
   reminderHistoryStore = null,
   renewalActionStore = null,
+  monthlySnapshotStore = null,
+  backupService = null,
   now = () => new Date(),
   logger = console,
 }) {
@@ -57,6 +65,38 @@ export function createApp({
           mailer,
           reminderHistoryStore,
           now()
+        );
+      }
+
+      if (url.pathname === "/api/snapshots" && request.method === "GET") {
+        return await handleListSnapshots(response, monthlySnapshotStore, url, now());
+      }
+
+      if (url.pathname === "/api/snapshots" && request.method === "POST") {
+        return await handleCreateSnapshot(
+          request,
+          response,
+          store,
+          monthlySnapshotStore,
+          exchangeRates,
+          now()
+        );
+      }
+
+      if (url.pathname === "/api/backups" && request.method === "GET") {
+        return await handleListBackups(response, backupService);
+      }
+
+      if (url.pathname === "/api/backups" && request.method === "POST") {
+        return await handleCreateBackup(response, backupService, now());
+      }
+
+      const backupRestoreMatch = url.pathname.match(/^\/api\/backups\/([^/]+)\/restore$/);
+      if (backupRestoreMatch && request.method === "POST") {
+        return await handleRestoreBackup(
+          response,
+          backupService,
+          decodePathSegment(backupRestoreMatch[1])
         );
       }
 
@@ -156,8 +196,84 @@ async function handleList(_request, response, store, url, exchangeRates, current
     filters: {
       regions,
       statuses: statusDefinitions(),
+      paymentStatuses: paymentStatusDefinitions(),
     },
   });
+}
+
+async function handleListSnapshots(response, monthlySnapshotStore, url, currentDate) {
+  const defaultToday = todayInChina(currentDate);
+  const month = normalizeMonth(url.searchParams.get("month"), defaultToday.slice(0, 7));
+  const snapshots = await listOptionalStore(monthlySnapshotStore);
+  const snapshot = snapshots.find((record) => record?.month === month) || null;
+
+  sendJson(response, 200, {
+    month,
+    snapshot,
+    snapshots: snapshots.map(snapshotMetadata),
+  });
+}
+
+async function handleCreateSnapshot(
+  request,
+  response,
+  store,
+  monthlySnapshotStore,
+  exchangeRates,
+  currentDate
+) {
+  if (!isWritableStore(monthlySnapshotStore)) {
+    return sendJson(response, 503, { error: "月度结算快照存储不可用" });
+  }
+
+  const payload = await readJson(request);
+  const defaultToday = todayInChina(currentDate);
+  const month = normalizeMonth(payload.month, defaultToday.slice(0, 7));
+  const overwrite = payload.overwrite !== false;
+  const accounts = await withRates(await store.list(), exchangeRates);
+  const snapshot = buildMonthlySnapshot(accounts, {
+    month,
+    today: `${month}-01`,
+    generatedAt: currentDate.toISOString(),
+  });
+  let result = null;
+
+  await monthlySnapshotStore.update((snapshots) => {
+    result = upsertMonthlySnapshot(snapshots, snapshot, { overwrite });
+    return result.snapshots;
+  });
+
+  sendJson(response, result.created ? 201 : 200, {
+    snapshot: result.snapshot,
+    created: result.created,
+    updated: result.updated,
+  });
+}
+
+async function handleListBackups(response, backupService) {
+  if (!backupService?.listBackups) {
+    return sendJson(response, 503, { error: "数据备份服务不可用" });
+  }
+
+  sendJson(response, 200, { backups: await backupService.listBackups() });
+}
+
+async function handleCreateBackup(response, backupService, currentDate) {
+  if (!backupService?.createBackup) {
+    return sendJson(response, 503, { error: "数据备份服务不可用" });
+  }
+
+  const backup = await backupService.createBackup({ now: currentDate });
+  sendJson(response, 201, { backup });
+}
+
+async function handleRestoreBackup(response, backupService, backupId) {
+  if (!backupService?.restoreBackup) {
+    return sendJson(response, 503, { error: "数据备份服务不可用" });
+  }
+
+  const restore = await backupService.restoreBackup(backupId);
+  sendJson(response, 200, { restore });
 }
 
 async function handleSendReminders(
